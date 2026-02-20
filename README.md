@@ -1,93 +1,91 @@
-# Mallireddy Bhoomika
-
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.com/nueve/internship/mallireddy-bhoomika.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab.com/nueve/internship/mallireddy-bhoomika/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+# Automated Intelligent Data Analysis Platform 
+ 
+An intelligent, end-to-end web application designed to automate the data science lifecycle. This platform allows users to upload raw CSV files and receive a comprehensive suite of automated Exploratory Data Analysis (EDA), Machine Learning (ML) insights, and natural-language summaries.
+ 
+ 
+##  System Overview
+The project utilizes a **Decoupled Asynchronous Architecture**. By separating the web server from the processing engine, the platform handles intensive computations (up to 50MB) without blocking the user interface or causing request timeouts.
+ 
+### Key Features
+- **Asynchronous Pipeline:** Heavy lifting is offloaded to background workers using Django Q.
+- **Automated EDA:** Instant generation of descriptive statistics and correlation matrices.
+- **ML Intelligence:** Automated feature importance ranking and PCA dimensionality reduction.
+- **Insight Engine:** Heuristic-based reasoning that translates math into human-readable text.
+- **Interactive Visuals:** Dynamic charting powered by Plotly.js.
+ 
+##  Tech Stack
+ 
+| Layer | Technology | Usage |
+| :--- | :--- | :--- |
+| **Frontend** | Next.js (React) | UI, Polling Logic, and Result Rendering |
+| **Backend API** | Django | API Orchestration and File Management |
+| **Task Queue** | Django Q | Background Task Management |
+| **Database** | PostgreSQL | Job Tracking and JSONB Result Storage |
+| **Data Science** | Pandas / NumPy | Data Auditing and Statistical Math |
+| **AI Layer** | Scikit-Learn | Random Forest & PCA Algorithms |
+| **Visualization** | Plotly.js | Interactive Data Mapping |
+ 
+---
+ 
+##  High-Level Architecture
+ 
+The system flow follows a strict "Producer-Consumer" pattern:
+ 
+1. **Upload:** Next.js streams the CSV to the Django API.
+2. **Queue:** Django creates a Job record in PostgreSQL and enqueues a task in Django Q.
+3. **Process:** The Django Q Worker picks up the task and runs the engine pipeline sequentially.
+4. **Poll:** Next.js polls the Status API every 3–5 seconds to update the UI progress bar.
+5. **Render:** Once completed, Next.js fetches the final JSONB blob and renders Plotly charts.
+ 
+ 
+---
+ 
+## 🔬 The Analysis Pipeline (Engines)
+ 
+The Background Worker executes three specialized engines:
+ 
+### 1. EDA Engine
+* **Input:** Raw DataFrame.
+* **Logic:** Calculates descriptive statistics, identifies null values, and generates a Pearson correlation matrix.
+* **Output:** Statistical JSON summary.
+ 
+### 2. ML Engine
+* **Input:** Cleaned DataFrame.
+* **Logic:** Trains a Random Forest to rank feature importance and executes PCA for 2D data projection.
+* **Output:** Feature scores and $(x, y)$ coordinate arrays.
+ 
+ 
+### 3. Insight Engine
+* **Input:** EDA & ML Outputs.
+* **Logic:** Applies conditional reasoning to identify significant trends (e.g., strong correlations or top data drivers).
+* **Output:** Array of human-readable strings.
+ 
+ 
+---
+ 
+## 📋 Component Dependency Map
+ 
+| Component | Depends On | Outcome |
+| :--- | :--- | :--- |
+| **Random Forest** | Pandas | Feature Importance Scores |
+| **PCA** | Scikit-Learn | 2D Scatter Plot Coordinates |
+| **JSONB Storage** | PostgreSQL | Persistent Result Storage |
+| **Polling Hook** | React/Next.js | Real-time Progress Updates |
+ 
+---
+ 
+## 🚦 Getting Started
+ 
+### Backend Setup
+1. Navigate to `/backend`.
+2. Install dependencies: `pip install -r requirements.txt`.
+3. Run migrations: `python manage.py migrate`.
+4. Start the worker: `python manage.py qcluster`.
+5. Start the server: `python manage.py runserver`.
+ 
+### Frontend Setup
+1. Navigate to `/frontend`.
+2. Install dependencies: `npm install`.
+3. Start the dev server: `npm run dev`.
+ 
+---
