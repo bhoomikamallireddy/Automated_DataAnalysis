@@ -1,6 +1,8 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import AnalysisJob
+from django_q.tasks import async_task
+from .tasks import run_pipeline
 from .serializers import AnalysisJobSerializer
 
 class AnalysisJobViewSet(viewsets.ModelViewSet):
@@ -10,5 +12,11 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Automatically set the file_name from the uploaded file
         file_obj = self.request.data.get('file')
-        serializer.save(file_name=file_obj.name)
+        if file_obj:
+            instance = serializer.save(file_name=file_obj.name)
+        else:
+           instance = serializer.save()
         
+        # Trigger the background task and return immediately!
+        async_task(run_pipeline, instance.id)
+            

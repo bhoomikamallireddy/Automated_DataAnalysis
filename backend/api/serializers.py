@@ -6,6 +6,7 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
         model = AnalysisJob
         # We include all fields so the frontend can see the ID, status, and results
         fields = '__all__'
+        extra_kwargs = {'file_name': {'required': False}}
         
     # Validation example: Ensure the uploaded file is actually a CSV
     def validate_file(self, value): 

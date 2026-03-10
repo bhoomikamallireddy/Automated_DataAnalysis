@@ -85,17 +85,17 @@ DATABASES = {
         'NAME': 'auto_dashboard_db',
         'USER': 'postgres',
         'PASSWORD': 'bhoomika*26', 
-        'HOST': '172.23.144.1',
+        'HOST': '192.168.240.1',
         'PORT': '5432',
     }
 }
-
+#172.23.144.1 
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
+        {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
@@ -135,9 +135,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 Q_CLUSTER = {
     'name': 'AutoDA_Worker',
     'workers': 4,
+    'recycle': 500,
     'timeout': 90,
     'retry': 120,
-    'queue_limit': 50,
+    'compress': True,
+    'save_limit': 250,
+    'queue_limit': 100,
+    'label': 'Django Q',
     'orm': 'default', 
 }
 
