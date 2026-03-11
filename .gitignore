@@ -9,7 +9,8 @@ __pycache__/
 .env
  *.env
 db.sqlite3
-/media/uploads/
+backend/media/uploads/
+backend/media/
 
 # --- Node.js / Next.js ---
 node_modules/
