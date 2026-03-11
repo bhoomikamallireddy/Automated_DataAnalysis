@@ -2,6 +2,8 @@
 venv/
 env/
 ENV/
+backend/media/uploads/
+backend/media/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,8 +11,7 @@ __pycache__/
 .env
  *.env
 db.sqlite3
-backend/media/uploads/
-backend/media/
+
 
 # --- Node.js / Next.js ---
 node_modules/
