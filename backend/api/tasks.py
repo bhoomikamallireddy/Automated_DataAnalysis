@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from .models import AnalysisJob
+from .llm_utils import get_llm_insights
 
 # ML Imports
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
@@ -18,36 +18,31 @@ def run_pipeline(job_id):
         job.save()
         
         file_path = job.file.path
-        
-        # 2. Safety Check
         if not os.path.exists(file_path):
             raise FileNotFoundError("Uploaded file not found on disk.")
             
-        header_df = pd.read_csv(file_path, nrows=0)
-        if header_df.columns.empty:
-            job.results = {"error": "The uploaded CSV file has no headers or content."}
-            job.status = 'FAILED'
-            job.save()
-            return
-
-        # -- EDA ENGINE---
-        
-        # 3. Scalable Metadata Scan (Chunking)
+        # 2. Schema Scan & One-Pass Chunking
         total_rows = 0
         null_counts = None
+        df_sample = None
+        
+        # We read headers separately for type metadata
+        header_df = pd.read_csv(file_path, nrows=0)
         
         for chunk in pd.read_csv(file_path, chunksize=100000):
             total_rows += len(chunk)
-            if null_counts is None:
+            if df_sample is None:
+                df_sample = chunk.copy() 
                 null_counts = chunk.isnull().sum()
             else:
                 null_counts += chunk.isnull().sum()
 
-        # 4. Statistical Sampling (100k rows max for heavy stats/ML)
-        df_sample = pd.read_csv(file_path, nrows=100000)
+        if df_sample is None or df_sample.empty:
+            raise ValueError("The uploaded CSV file is empty.")
+
         numeric_df = df_sample.select_dtypes(include=[np.number])
         
-        # Initialize the results container
+        # 3. EDA ENGINE 
         eda_results = {
             "metadata": {
                 "total_rows": total_rows,
@@ -60,67 +55,66 @@ def run_pipeline(job_id):
             "outliers": {}
         }
 
-        # 5. Process Statistics if numeric data exists
         if not numeric_df.empty:
-            eda_results["statistics"] = numeric_df.describe().to_dict()
+            # Stats (Optimized set)
+            stats_df = numeric_df.describe()
+            metrics = ['mean', 'std', 'min', 'max', '25%', '50%', '75%']
+            eda_results["statistics"] = stats_df.loc[stats_df.index.isin(metrics)].to_dict()
             
-            # Intelligent Correlation
-            if numeric_df.shape[1] < 30:
-                eda_results["correlations"] = numeric_df.corr().to_dict()
-            else:
-                top_v_cols = numeric_df.var().sort_values(ascending=False).head(20).index
-                eda_results["correlations"] = numeric_df[top_v_cols].corr().to_dict()
-                eda_results["correlations"]["_info"] = "Limited to top 20 variance columns."
+            # Correlation (Wide-set protection)
+            working_df = numeric_df
+            if numeric_df.shape[1] > 30:
+                top_cols = numeric_df.var().sort_values(ascending=False).head(30).index
+                working_df = numeric_df[top_cols]
+                eda_results["correlations_info"] = "Displaying top 30 columns by variance."
+            eda_results["correlations"] = working_df.corr().to_dict()
             
-            # Outlier Detection (Z-score > 3)
+            # Outliers (Vectorized Z-Score)
             outliers = {}
             for col in numeric_df.columns:
-                clean_col = numeric_df[col].dropna()
-                if not clean_col.empty and clean_col.std() > 0:
-                    z_scores = np.abs(stats.zscore(clean_col))
-                    outliers[col] = int(np.sum(z_scores > 3))
+                col_data = numeric_df[col].dropna()
+                if not col_data.empty and col_data.std() > 0:
+                    z = np.abs((col_data - col_data.mean()) / col_data.std())
+                    outliers[col] = int((z > 3).sum())
                 else:
                     outliers[col] = 0
             eda_results["outliers"] = outliers
 
-        # --- ML ENGINE (PATTERN DISCOVERY) ---
-        
+        # 4. ML ENGINE (Pattern Discovery)
         ml_insights = {}
-        
-        # We need at least 2 columns and some rows to perform meaningful ML
         if numeric_df.shape[1] >= 2 and total_rows > 10:
             try:
-                # 1. Handle "Dirty Data" (Imputation)
+                # Preprocessing
                 imputer = SimpleImputer(strategy='mean')
-                clean_array = imputer.fit_transform(numeric_df)
+                scaled_data = StandardScaler().fit_transform(imputer.fit_transform(numeric_df))
                 
-                # 2. PCA (2D Mapping for Frontend Visualization)
-                scaler = StandardScaler()
-                scaled_data = scaler.fit_transform(clean_array)
+                # PCA Logic
                 pca = PCA(n_components=2)
                 pca_result = pca.fit_transform(scaled_data)
                 
-                # Store first 500 points to keep JSON small
                 ml_insights['pca_data'] = pca_result[:500].tolist() 
                 ml_insights['explained_variance'] = pca.explained_variance_ratio_.tolist()
 
-                # 3. Feature Importance (Random Forest)
-                # Assumes the last numeric column is the 'Target' for discovery
-                X = clean_array[:, :-1]
-                y = clean_array[:, -1]
-                
-                if X.shape[1] > 0:
-                    rf = RandomForestRegressor(n_estimators=20, random_state=42)
-                    rf.fit(X, y)
-                    
-                    importances = dict(zip(numeric_df.columns[:-1], rf.feature_importances_.tolist()))
-                    # Sort by importance descending
-                    ml_insights['feature_importance'] = dict(
-                        sorted(importances.items(), key=lambda x: x[1], reverse=True)
-                    )
-
+                # Feature Influence (Unsupervised importance via PCA loadings)
+                loadings = np.sqrt(np.sum(pca.components_**2, axis=0))
+                influence_map = dict(zip(numeric_df.columns, loadings.tolist()))
+                ml_insights['feature_influence'] = dict(
+                    sorted(influence_map.items(), key=lambda x: x[1], reverse=True)[:10]
+                )
             except Exception as ml_err:
                 ml_insights['error'] = f"ML processing failed: {str(ml_err)}"
+
+        # 5. LLM INTELLIGENCE 
+        try:
+            # Only send essential context to save tokens/cost
+            context = {
+                "metadata": eda_results["metadata"],
+                "influence": ml_insights.get('feature_influence', {}),
+                "stats": eda_results["statistics"]
+            }
+            ml_insights['ai_observations'] = get_llm_insights(context)
+        except Exception as e:
+            ml_insights['ai_observations'] = {"error": f"LLM failed: {str(e)}"}
 
         # 6. Final Save
         job.results = {**eda_results, "ml_insights": ml_insights}
@@ -128,10 +122,8 @@ def run_pipeline(job_id):
         job.save()
 
     except AnalysisJob.DoesNotExist:
-        # Prevents error if job is deleted while in queue
         pass
     except Exception as e:
-        # Global failure catch
         try:
             job.status = 'FAILED'
             job.results = {"error": str(e)}
