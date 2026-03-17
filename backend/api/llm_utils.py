@@ -42,7 +42,13 @@ def get_llm_insights(analysis_results):
         """
 
         # 4. Generate and Sanitize
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
         raw_text = response.text.strip()
 
         # Extra safety: Clean markdown backticks if the model ignores the config
