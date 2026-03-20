@@ -52,7 +52,8 @@ def run_pipeline(job_id):
             },
             "statistics": {},
             "correlations": {},
-            "outliers": {}
+            "outliers": {},
+            "univariate": {}
         }
 
         if not numeric_df.empty:
@@ -79,6 +80,33 @@ def run_pipeline(job_id):
                 else:
                     outliers[col] = 0
             eda_results["outliers"] = outliers
+            
+            # --- Inside run_pipeline, where you process numeric_df ---
+            univariate_data = {}
+
+            for col in numeric_df.columns:
+               col_data = numeric_df[col].dropna()
+               if not col_data.empty:
+                # 1. Histogram Bins (Fixed 10 bins for UI consistency)
+                 counts, bin_edges = np.histogram(col_data, bins=10)
+        
+                 # 2. Simplified KDE/Distribution Curve 
+                 # We'll send the 5-point summary + standard deviation for the UI to "fake" a curve 
+                 # or just send the histogram bins which Recharts handles well.
+                 univariate_data[col] = {
+                    "histogram": [
+                      {"bin": f"{bin_edges[i]:.1f}-{bin_edges[i+1]:.1f}", "count": int(counts[i])} 
+                     for i in range(len(counts))
+                   ],
+                    "stats": {
+                    "min": float(col_data.min()),
+                    "q1": float(col_data.quantile(0.25)),
+                   "median": float(col_data.median()),
+                    "q3": float(col_data.quantile(0.75)),
+                    "max": float(col_data.max())
+                    }
+                 }
+            eda_results["univariate"] = univariate_data
 
         # 4. ML ENGINE (Pattern Discovery)
         ml_insights = {}

@@ -8,6 +8,31 @@ import {
 } from 'recharts';
 import React from 'react';
 
+// --- DISTRIBUTION CHART ---
+function DistributionChart({ data, title }) {
+  if (!data || data.length === 0) return <div className="text-xs text-zinc-400 italic">No distribution data available for this column.</div>;
+  
+  return (
+    <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl">
+      <h4 className="text-[9px] font-bold text-zinc-400 uppercase mb-3 tracking-widest">{title}</h4>
+      <div className="h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="bin" fontSize={8} tick={{fill: '#94a3b8'}} />
+            <YAxis fontSize={8} tick={{fill: '#94a3b8'}} />
+            <Tooltip 
+              contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '10px' }}
+              cursor={{fill: '#f1f5f9'}}
+            />
+            <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("overview");
   const [file, setFile] = useState(null);
@@ -16,6 +41,8 @@ export default function Home() {
 
   // Initialize Polling Hook
   const { status: jobStatus, results, error: jobError } = useJobStatus(currentJobId);
+  // NEW STATE: Track which row in the Data Audit is expanded
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const handleUpload = async () => {
     if (!file) return alert("Please select a CSV file first!");
@@ -115,7 +142,7 @@ export default function Home() {
           {(jobStatus === 'PROCESSING' || jobStatus === 'PENDING') && (
             <div className="animate-pulse bg-blue-600 text-white p-8 rounded-3xl flex justify-between items-center shadow-xl shadow-blue-100">
               <div>
-                <p className="text-lg font-black tracking-tight">🧠 AI is analyzing patterns...</p>
+                <p className="text-lg font-black tracking-tight">🧠 Analyzing patterns...</p>
                 <p className="text-sm opacity-80 font-medium">Calculating PCA coordinates and semantic executive summaries.</p>
               </div>
               <div className="h-10 w-10 border-4 border-blue-400 border-t-white rounded-full animate-spin"></div>
@@ -178,9 +205,12 @@ export default function Home() {
                   {/* TAB: DATA AUDIT */}
                   {activeTab === 'audit' && (
                     <div className="animate-in fade-in slide-in-from-left-4 duration-700 space-y-6">
+                      <div className="flex justify-between items-center">
                       <h3 className="text-lg font-bold">Data Quality Audit</h3>
-                      <div className="overflow-x-auto border border-zinc-100 rounded-2xl">
-                        <table className="w-full text-left text-sm">
+                      <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest italic">Click a row to view univariate distribution</p>
+                      </div>
+                      <div className="overflow-hidden border border-zinc-100 rounded-2xl">
+                        <table className="w-full text-left text-sm border-collapse">
                           <thead className="bg-zinc-50 text-zinc-500 uppercase text-[10px] font-bold">
                             <tr>
                               <th className="px-6 py-4">Column Name</th>
@@ -191,12 +221,61 @@ export default function Home() {
                           </thead>
                           <tbody className="divide-y divide-zinc-50">
                             {Object.keys(results?.metadata?.column_types || {}).map((col) => (
-                              <tr key={col} className="hover:bg-zinc-50/50 transition-colors">
-                                <td className="px-6 py-4 font-semibold text-zinc-800">{col}</td>
-                                <td className="px-6 py-4 text-zinc-500 font-mono">{results?.metadata?.column_types[col]}</td>
-                                <td className="px-6 py-4 text-zinc-500">{results?.metadata?.missing_values[col] || 0}</td>
-                                <td className="px-6 py-4 text-zinc-500">{results?.outliers[col] || 0}</td>
-                              </tr>
+                              <React.Fragment key={col}>
+                                {/* Main Row */}
+                                <tr 
+                                  onClick={() => setExpandedRow(expandedRow === col ? null : col)}
+                                  className={`cursor-pointer transition-colors ${expandedRow === col ? 'bg-blue-50/30' : 'hover:bg-zinc-50/50'}`}
+                                >
+                                  <td className="px-6 py-4 font-semibold text-zinc-800 flex items-center gap-2">
+                                    <span className={`text-[8px] transition-transform ${expandedRow === col ? 'rotate-90' : ''}`}>▶</span>
+                                    {col}
+                                  </td>
+                                  <td className="px-6 py-4 text-zinc-500 font-mono text-xs">{results?.metadata?.column_types[col]}</td>
+                                  <td className="px-6 py-4 text-zinc-500">{results?.metadata?.missing_values[col] || 0}</td>
+                                  <td className="px-6 py-4 text-zinc-500">{results?.outliers[col] || 0}</td>
+                                </tr>
+
+                                {/* Expandable Details Row */}
+                                {expandedRow === col && (
+                                  <tr>
+                                    <td colSpan="4" className="bg-zinc-50/30 px-6 py-8 animate-in slide-in-from-top-2 duration-300">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* Histogram */}
+                                        <DistributionChart 
+                                          title="Value Distribution" 
+                                          data={results?.univariate?.[col]?.histogram} 
+                                        />
+                                        
+                                        {/* Statistical Spread */}
+                                        <div className="flex flex-col justify-center">
+                                          <h4 className="text-[9px] font-bold text-zinc-400 uppercase mb-4 tracking-widest">Statistical Spread</h4>
+                                          <div className="grid grid-cols-2 gap-4">
+                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">Min - Max</p>
+                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.min ?? 'N/A'} — {results?.univariate?.[col]?.stats?.max ?? 'N/A'}</p>
+                                            </div>
+                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">Median (Q2)</p>
+                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.median ?? 'N/A'}</p>
+                                            </div>
+                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">IQR (Q1 - Q3)</p>
+                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.q1 ?? 'N/A'} — {results?.univariate?.[col]?.stats?.q3 ?? 'N/A'}</p>
+                                            </div>
+                                            <div className="p-3 bg-blue-600 rounded-lg text-white shadow-md">
+                                              <p className="text-[8px] opacity-70 uppercase font-bold">AI Insight</p>
+                                              <p className="text-[10px] leading-tight">
+                                                {results?.outliers[col] > 0 ? 'High outlier density detected. Consider capping.' : 'Data distribution appears stable.'}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             ))}
                           </tbody>
                         </table>
