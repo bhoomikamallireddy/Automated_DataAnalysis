@@ -1,160 +1,152 @@
 import os
 import pandas as pd
 import numpy as np
-from scipy import stats
 from .models import AnalysisJob
 from .llm_utils import get_llm_insights
+import random
 
 # ML Imports
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
+def sanitize_for_json(obj):
+    """Recursively converts numpy types to standard python types for JSON safety."""
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(i) for i in obj]
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, (np.int64, np.int32)):
+        return int(obj)
+    elif pd.isna(obj):
+        return None
+    return obj
+
 def run_pipeline(job_id):
     try:
-        # 1. Initialization
         job = AnalysisJob.objects.get(id=job_id)
         job.status = 'PROCESSING'
         job.save()
         
         file_path = job.file.path
-        if not os.path.exists(file_path):
-            raise FileNotFoundError("Uploaded file not found on disk.")
-            
-        # 2. Schema Scan & One-Pass Chunking
-        total_rows = 0
-        null_counts = None
-        df_sample = None
-        
-        # We read headers separately for type metadata
         header_df = pd.read_csv(file_path, nrows=0)
         
-        for chunk in pd.read_csv(file_path, chunksize=100000):
-            total_rows += len(chunk)
-            if df_sample is None:
-                df_sample = chunk.copy() 
-                null_counts = chunk.isnull().sum()
-            else:
-                null_counts += chunk.isnull().sum()
-
-        if df_sample is None or df_sample.empty:
-            raise ValueError("The uploaded CSV file is empty.")
-
+        # 1. Load Data
+        df_sample = pd.read_csv(file_path, nrows=5000) 
+        total_rows = sum(1 for _ in open(file_path)) - 1
         numeric_df = df_sample.select_dtypes(include=[np.number])
         
-        # 3. EDA ENGINE 
+        # A. Data Type Breakdown (Pie Chart)
+        type_counts = df_sample.dtypes.value_counts()
+        dtype_map = {
+            "Numeric": int(type_counts.get('float64', 0) + type_counts.get('int64', 0)),
+            "Categorical": int(type_counts.get('object', 0) + type_counts.get('category', 0)),
+            "Datetime": int(type_counts.get('datetime64[ns]', 0)),
+        }
+        # Catch any types not listed above
+        dtype_map["Other"] = int(len(df_sample.columns) - sum(dtype_map.values()))
+        
+        # B. Missing Value Correlation (Dendrogram Logic)
+        null_df = df_sample.isnull()
+        cols_with_nulls = null_df.columns[null_df.any()].tolist()
+        null_corr_matrix = []
+        if cols_with_nulls:
+            # Correlation of nullity: 1 if col A and B are missing together
+            null_corr_matrix = null_df[cols_with_nulls].corr().fillna(0).values
+
+        quality_metrics = {
+            "dtype_breakdown": [{"type": k, "count": v} for k, v in dtype_map.items() if v > 0],
+            "null_correlation": {
+                "z": null_corr_matrix,
+                "labels": cols_with_nulls
+            }
+        }
+        
+        # 2. EDA Data (page.js Audit/Gauge support)
+        null_counts = df_sample.isnull().sum()
         eda_results = {
             "metadata": {
                 "total_rows": total_rows,
                 "total_cols": len(header_df.columns),
-                "missing_values": null_counts.to_dict() if null_counts is not None else {},
-                "column_types": header_df.dtypes.astype(str).to_dict()
+                "missing_values": null_counts.to_dict(),
+                "column_types": header_df.dtypes.astype(str).to_dict(),
+                "file_name": os.path.basename(file_path),
+                "health_score": round(max(0, 100 - (null_counts.sum() / (total_rows * len(header_df.columns)) * 100)), 1)
             },
-            "statistics": {},
-            "correlations": {},
-            "outliers": {},
             "univariate": {}
         }
 
-        if not numeric_df.empty:
-            # Stats (Optimized set)
-            stats_df = numeric_df.describe()
-            metrics = ['mean', 'std', 'min', 'max', '25%', '50%', '75%']
-            eda_results["statistics"] = stats_df.loc[stats_df.index.isin(metrics)].to_dict()
+        outliers = {}
+        for col in numeric_df.columns:
+            cd = numeric_df[col].dropna()
+            if not cd.empty and cd.std() > 0:
+                z = (cd - cd.mean()).abs() / cd.std()
+                outliers[col] = int((z > 3).sum())
+                cnts, bins = np.histogram(cd, bins=10)
+                eda_results["univariate"][col] = {
+                    "histogram": [{"bin": f"{bins[i]:.1f}", "count": int(cnts[i])} for i in range(len(cnts))],
+                    "stats": {"min": float(cd.min()), "median": float(cd.median()), "max": float(cd.max())}
+                }
+        eda_results["outliers"] = outliers
+
+        # 3. ML & Correlations (page.js Correlations/ML Tab support)
+        ml_insights = {"quality_metrics": quality_metrics} 
+        if not numeric_df.empty and len(numeric_df) > 10:
+            imp = SimpleImputer(strategy='mean')
+            scaled = StandardScaler().fit_transform(imp.fit_transform(numeric_df))
+            pca = PCA(n_components=2)
+            pca_data = pca.fit_transform(scaled)
+            ml_insights['pca_data'] = pca_data[:500]
+
+            loadings = np.sqrt(np.sum(pca.components_**2, axis=0))
+            influence = dict(sorted(zip(numeric_df.columns, loadings), key=lambda x: x[1], reverse=True)[:10])
+            ml_insights['feature_influence'] = influence
             
-            # Correlation (Wide-set protection)
-            working_df = numeric_df
-            if numeric_df.shape[1] > 30:
-                top_cols = numeric_df.var().sort_values(ascending=False).head(30).index
-                working_df = numeric_df[top_cols]
-                eda_results["correlations_info"] = "Displaying top 30 columns by variance."
-            eda_results["correlations"] = working_df.corr().to_dict()
-            
-            # Outliers (Vectorized Z-Score)
-            outliers = {}
-            for col in numeric_df.columns:
-                col_data = numeric_df[col].dropna()
-                if not col_data.empty and col_data.std() > 0:
-                    z = np.abs((col_data - col_data.mean()) / col_data.std())
-                    outliers[col] = int((z > 3).sum())
-                else:
-                    outliers[col] = 0
-            eda_results["outliers"] = outliers
-            
-            # --- Inside run_pipeline, where you process numeric_df ---
-            univariate_data = {}
+            dist_analysis = {}
+            for col in list(influence.keys())[:6]:
+                raw_vals = numeric_df[col].dropna().tolist()
+                dist_analysis[col] = {
+                    "raw_sample": random.sample(raw_vals, min(500, len(raw_vals))),
+                    "stats": eda_results["univariate"].get(col, {}).get("stats", {})
+                }
+            ml_insights["distribution_analysis"] = dist_analysis
 
-            for col in numeric_df.columns:
-               col_data = numeric_df[col].dropna()
-               if not col_data.empty:
-                # 1. Histogram Bins (Fixed 10 bins for UI consistency)
-                 counts, bin_edges = np.histogram(col_data, bins=10)
-        
-                 # 2. Simplified KDE/Distribution Curve 
-                 # We'll send the 5-point summary + standard deviation for the UI to "fake" a curve 
-                 # or just send the histogram bins which Recharts handles well.
-                 univariate_data[col] = {
-                    "histogram": [
-                      {"bin": f"{bin_edges[i]:.1f}-{bin_edges[i+1]:.1f}", "count": int(counts[i])} 
-                     for i in range(len(counts))
-                   ],
-                    "stats": {
-                    "min": float(col_data.min()),
-                    "q1": float(col_data.quantile(0.25)),
-                   "median": float(col_data.median()),
-                    "q3": float(col_data.quantile(0.75)),
-                    "max": float(col_data.max())
-                    }
-                 }
-            eda_results["univariate"] = univariate_data
 
-        # 4. ML ENGINE (Pattern Discovery)
-        ml_insights = {}
-        if numeric_df.shape[1] >= 2 and total_rows > 10:
-            try:
-                # Preprocessing
-                imputer = SimpleImputer(strategy='mean')
-                scaled_data = StandardScaler().fit_transform(imputer.fit_transform(numeric_df))
-                
-                # PCA Logic
-                pca = PCA(n_components=2)
-                pca_result = pca.fit_transform(scaled_data)
-                
-                ml_insights['pca_data'] = pca_result[:500].tolist() 
-                ml_insights['explained_variance'] = pca.explained_variance_ratio_.tolist()
+            # Generate Gallery for page.js
+            top_6 = list(influence.keys())[:6]
+            gallery = []
+            for i in range(len(top_6)):
+                for j in range(i + 1, len(top_6)):
+                    cx, cy = top_6[i], top_6[j]
+                    pdf = numeric_df[[cx, cy]].dropna()
+                    if len(pdf) > 5:
+                        s = pdf.sample(n=min(300, len(pdf)))
+                        if s[cx].nunique() > 1:
+                          m, b = np.polyfit(s[cx], s[cy], 1)
+                          gallery.append({
+                            "x_name": cx, "y_name": cy, "corr": float(pdf.corr().iloc[0,1]),
+                            "data": s.to_dict(orient='records'),
+                            "regression": {"x": [float(s[cx].min()), float(s[cx].max())], "y": [float(m*s[cx].min()+b), float(m*s[cx].max()+b)]}
+                        })
+            ml_insights["bivariate_gallery"] = gallery
+            ml_insights["influential_correlations"] = {"z": numeric_df[top_6].corr().fillna(0).values, "x": top_6, "y": top_6}
 
-                # Feature Influence (Unsupervised importance via PCA loadings)
-                loadings = np.sqrt(np.sum(pca.components_**2, axis=0))
-                influence_map = dict(zip(numeric_df.columns, loadings.tolist()))
-                ml_insights['feature_influence'] = dict(
-                    sorted(influence_map.items(), key=lambda x: x[1], reverse=True)[:10]
-                )
-            except Exception as ml_err:
-                ml_insights['error'] = f"ML processing failed: {str(ml_err)}"
-
-        # 5. LLM INTELLIGENCE 
+        # 4. Final Cleanup & Save
+        full_data = sanitize_for_json({**eda_results, "ml_insights": ml_insights})
         try:
-            # Only send essential context to save tokens/cost
-            context = {
-                "metadata": eda_results["metadata"],
-                "influence": ml_insights.get('feature_influence', {}),
-                "stats": eda_results["statistics"]
-            }
-            ml_insights['ai_observations'] = get_llm_insights(context)
-        except Exception as e:
-            ml_insights['ai_observations'] = {"error": f"LLM failed: {str(e)}"}
+            full_data['ml_insights']['ai_observations'] = get_llm_insights(full_data)
+        except:
+            full_data['ml_insights']['ai_observations'] = {"summary": "Analysis complete, AI summary unavailable."}
 
-        # 6. Final Save
-        job.results = {**eda_results, "ml_insights": ml_insights}
+        job.results = full_data
         job.status = 'COMPLETED'
         job.save()
 
-    except AnalysisJob.DoesNotExist:
-        pass
     except Exception as e:
-        try:
-            job.status = 'FAILED'
-            job.results = {"error": str(e)}
-            job.save()
-        except:
-            pass
+        job.status = 'FAILED'
+        job.results = {"error": str(e)}
+        job.save()
