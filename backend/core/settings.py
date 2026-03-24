@@ -134,7 +134,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 Q_CLUSTER = {
     'name': 'AutoDA_Worker',
-    'workers': 4,
+    'workers': 5,
     'recycle': 500,
     'timeout': 900,
     'retry': 920,

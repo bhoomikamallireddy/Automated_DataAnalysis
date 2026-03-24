@@ -15,6 +15,7 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
         instance = serializer.save(file_name=file_obj.name)
 
         # Trigger the background task and return immediately!
+        #Lets analysis handle asynchronously files
         async_task(run_pipeline, instance.id)
     
             
