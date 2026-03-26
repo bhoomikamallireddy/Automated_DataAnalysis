@@ -2,28 +2,41 @@
 
 import { useState } from "react";
 import { useJobStatus } from "../hooks/useJobStatus";
+import PlotlyChart from '../components/PlotlyChart';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   ScatterChart, Scatter, CartesianGrid 
 } from 'recharts';
 import React from 'react';
 
+// --- ANALYSIS MODULES LIST ---
+const modules = [
+  { id: 'overview', label: 'Overview', icon: '🏠' },
+  { id: 'audit', label: 'Audit', icon: '🔍' },
+  { id: 'correlations', label: 'Correlations', icon: '🧬' },
+  { id: 'ml_insights', label: 'ML Insights', icon: '🧠' },
+  { id: 'distribution', label: 'Distribution', icon: '📊' },
+  { id: 'recommendations', label: 'Recommendations', icon: '💡' },
+];
+
 // --- DISTRIBUTION CHART ---
 function DistributionChart({ data, title }) {
-  if (!data || data.length === 0) return <div className="text-xs text-zinc-400 italic">No distribution data available for this column.</div>;
-  
+  if (!data || data.length === 0) return (
+    <div className="text-xs text-zinc-400 italic">No distribution data available for this column.</div>
+  );
+
   return (
-    <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl">
+    <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl transition-all duration-300 hover:bg-white hover:shadow-md">
       <h4 className="text-[9px] font-bold text-zinc-400 uppercase mb-3 tracking-widest">{title}</h4>
       <div className="h-40">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="bin" fontSize={8} tick={{fill: '#94a3b8'}} />
-            <YAxis fontSize={8} tick={{fill: '#94a3b8'}} />
-            <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '10px' }}
-              cursor={{fill: '#f1f5f9'}}
+            <XAxis dataKey="bin" fontSize={8} tick={{ fill: '#94a3b8' }} />
+            <YAxis fontSize={8} tick={{ fill: '#94a3b8' }} />
+            <Tooltip
+              contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '10px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+              cursor={{ fill: '#f1f5f9' }}
             />
             <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} />
           </BarChart>
@@ -35,14 +48,14 @@ function DistributionChart({ data, title }) {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("overview");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState("current");
   const [file, setFile] = useState(null);
   const [currentJobId, setCurrentJobId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  // Initialize Polling Hook
-  const { status: jobStatus, results, error: jobError } = useJobStatus(currentJobId);
-  // NEW STATE: Track which row in the Data Audit is expanded
   const [expandedRow, setExpandedRow] = useState(null);
+
+  const { status: jobStatus, results, error: jobError } = useJobStatus(currentJobId);
 
   const handleUpload = async () => {
     if (!file) return alert("Please select a CSV file first!");
@@ -70,402 +83,783 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-zinc-50 font-sans text-zinc-900">
-      
-      {/* --- SIDE NAVIGATION --- */}
-      <aside className="w-64 bg-white border-r border-zinc-200 flex flex-col shrink-0">
-        <div className="p-6 border-b border-zinc-100">
-          <h1 className="text-xl font-black tracking-tighter text-blue-600 uppercase">AutoEDA</h1>
+    <div className="flex h-screen bg-zinc-50 font-sans text-zinc-900 selection:bg-blue-100 overflow-hidden">
+
+      {/* ===================== SIDEBAR ===================== */}
+
+      {/* Mobile backdrop overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-zinc-200 flex flex-col shrink-0
+        transform transition-transform duration-300 ease-in-out
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        lg:translate-x-0 lg:static lg:block
+      `}>
+        <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
+          <h1 className="text-xl font-black tracking-tighter text-blue-600 uppercase hover:opacity-80 transition-opacity cursor-default">
+            AutoEDA
+          </h1>
+          {/* Close button — mobile only */}
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="lg:hidden p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors"
+          >
+            ✕
+          </button>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
-          <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest px-2">Workspace</div>
-          <button className="w-full flex items-center px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 rounded-lg">
-            📊 Current Analysis
-          </button>
-          <button className="w-full flex items-center px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors">
-            🕒 History
-          </button>
-        </nav>
-        <div className="p-4 border-t border-zinc-100">
-          <div className="p-3 bg-zinc-900 rounded-xl text-white text-[10px]">
-            <p className="opacity-70 uppercase tracking-tighter mb-1">AI Engine Active</p>
-            <p className="font-mono text-blue-400">Gemini-2.5-Flash</p>
+
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+
+          {/* DESKTOP: Workspace mode (Current Analysis / History) */}
+          <div className="hidden lg:block space-y-2">
+            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest px-2 mb-2">Workspace</div>
+            <button
+              onClick={() => setWorkspaceMode('current')}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all active:scale-[0.98] ${
+                workspaceMode === 'current' ? "bg-blue-50 text-blue-700" : "text-zinc-500 hover:bg-zinc-100"
+              }`}
+            >
+              📊 Current Analysis
+            </button>
+            <button
+              onClick={() => setWorkspaceMode('history')}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all active:scale-[0.98] ${
+                workspaceMode === 'history' ? "bg-blue-50 text-blue-700" : "text-zinc-500 hover:bg-zinc-100"
+              }`}
+            >
+              🕒 History
+            </button>
           </div>
-        </div>
+
+          {/* MOBILE: Analysis module tabs */}
+          <div className="lg:hidden space-y-1">
+            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest px-2 mb-2">Analysis Modules</div>
+            {modules.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => { setActiveTab(m.id); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center px-3 py-2.5 text-sm font-bold rounded-xl transition-all active:scale-[0.98] ${
+                  activeTab === m.id
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
+                    : "text-zinc-500 hover:bg-zinc-50"
+                }`}
+              >
+                <span className="mr-3">{m.icon}</span> {m.label}
+              </button>
+            ))}
+          </div>
+        </nav>
       </aside>
 
-      {/* --- MAIN WORKSPACE --- */}
-      <main className="flex-1 overflow-y-auto flex flex-col">
-        
-        {/* LAYER 1: THE HEADER (Global Context) */}
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h2 className="text-sm font-bold text-zinc-800">Project Workspace</h2>
-            <span className="h-4 w-px bg-zinc-300"></span>
-            <div className="flex items-center gap-3">
-              <input 
-                type="file" id="csv-upload" hidden accept=".csv"
-                onChange={(e) => setFile(e.target.files[0])} 
-              />
-              <label 
-                htmlFor="csv-upload" 
-                className="px-3 py-1.5 text-[11px] font-bold bg-zinc-100 hover:bg-zinc-200 rounded-md cursor-pointer transition-all border border-zinc-200"
+      {/* ===================== MAIN WORKSPACE ===================== */}
+      <main className="flex-1 overflow-y-auto flex flex-col min-w-0">
+
+        {/* HEADER */}
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-3 md:px-8 py-3 flex justify-between items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+
+            {/* Hamburger — mobile only, opens sidebar with module tabs */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="lg:hidden p-1.5 text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors"
+              aria-label="Open navigation"
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {/* MOBILE: Current Analysis / History toggle in the header */}
+            <div className="flex lg:hidden bg-zinc-100 p-0.5 rounded-lg">
+              <button
+                onClick={() => setWorkspaceMode('current')}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${
+                  workspaceMode === 'current' ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500"
+                }`}
               >
-                {file ? file.name : "Choose CSV"}
-              </label>
-              <button 
-                onClick={handleUpload}
-                disabled={isUploading || (currentJobId && jobStatus !== 'COMPLETED' && jobStatus !== 'FAILED')}
-                className="px-4 py-1.5 text-[11px] font-bold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-zinc-300 transition-all"
+                Lab
+              </button>
+              <button
+                onClick={() => setWorkspaceMode('history')}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${
+                  workspaceMode === 'history' ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500"
+                }`}
               >
-                {isUploading ? "Uploading..." : "Run Analysis"}
+                History
               </button>
             </div>
+
+            {/* DESKTOP: Static title */}
+            <h2 className="hidden lg:block text-sm font-bold text-zinc-800">Project Workspace</h2>
           </div>
-          <button onClick={() => {setCurrentJobId(null); setFile(null);}} className="text-[10px] font-bold text-zinc-400 hover:text-blue-600 transition-colors uppercase tracking-widest">
-            ↻ New Project
-          </button>
+
+          {/* Upload controls */}
+          <div className="flex items-center gap-1.5 md:gap-3 min-w-0">
+            <input
+              type="file" id="csv-upload" hidden accept=".csv"
+              onChange={(e) => setFile(e.target.files[0])}
+            />
+            <label
+              htmlFor="csv-upload"
+              className="px-2.5 py-1.5 text-[10px] font-bold bg-zinc-100 hover:bg-zinc-200 rounded-md cursor-pointer transition-all active:scale-95 border border-zinc-200 max-w-[90px] sm:max-w-[140px] truncate shrink-0"
+            >
+              {file ? file.name : "Choose CSV"}
+            </label>
+            <button
+              onClick={handleUpload}
+              disabled={isUploading || (currentJobId && jobStatus !== 'COMPLETED' && jobStatus !== 'FAILED')}
+              className="px-3 py-1.5 text-[10px] font-bold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-zinc-300 transition-all active:scale-95 shrink-0"
+            >
+              {isUploading ? "Uploading..." : "Run Analysis"}
+            </button>
+            <button
+              onClick={() => { setCurrentJobId(null); setFile(null); }}
+              className="hidden md:block text-[10px] font-bold text-zinc-400 hover:text-blue-600 transition-colors uppercase tracking-widest active:scale-95"
+            >
+              ↻ New
+            </button>
+          </div>
         </header>
 
-        <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
-          
-          {/* ZERO STATE: UPLOAD PROMPT */}
-          {!currentJobId && (
-            <div className="flex flex-col items-center justify-center py-32 text-center border-2 border-dashed border-zinc-200 rounded-3xl bg-white">
-              <div className="h-20 w-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-6 text-3xl">📁</div>
-              <h3 className="text-2xl font-black text-zinc-800 tracking-tight">Ready for Insights?</h3>
-              <p className="text-zinc-500 mt-2 max-w-sm">Upload a CSV file in the header to trigger the Automated EDA & Machine Learning engine.</p>
-            </div>
-          )}
+        {/* ===================== PAGE CONTENT ===================== */}
+        <div className="p-4 md:p-8 w-full mx-auto space-y-8">
 
-          {/* LOADING STATE */}
-          {(jobStatus === 'PROCESSING' || jobStatus === 'PENDING') && (
-            <div className="animate-pulse bg-blue-600 text-white p-8 rounded-3xl flex justify-between items-center shadow-xl shadow-blue-100">
-              <div>
-                <p className="text-lg font-black tracking-tight">🧠 Analyzing patterns...</p>
-                <p className="text-sm opacity-80 font-medium">Calculating PCA coordinates and semantic executive summaries.</p>
-              </div>
-              <div className="h-10 w-10 border-4 border-blue-400 border-t-white rounded-full animate-spin"></div>
-            </div>
-          )}
+          {/* WORKSPACE MODE SWITCHER */}
+          {workspaceMode === 'current' ? (
 
-          {/* COMPLETED DASHBOARD */}
-          {jobStatus === 'COMPLETED' && results && (
             <>
-              {/* LAYER 2: THE SUMMARY RIBBON (KPIs) */}
-              <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                <MetricCard label="AI Health Score" value="94%" color="text-green-600" />
-                <MetricCard label="Total Rows" value={results?.metadata?.total_rows?.toLocaleString() || "0"} />
-                <MetricCard label="Total Columns" value={results?.metadata?.total_cols || "0"} />
-                <MetricCard label="Detected Anomalies" value={Object.values(results?.outliers || {}).reduce((a, b) => a + b, 0)} color="text-amber-600" />
-                <MetricCard label="Analysis Status" value="Healthy" color="text-blue-600" />
-              </section>
+              {/* ZERO STATE */}
+              {!currentJobId && (
+                <div className="flex flex-col items-center justify-center py-24 md:py-32 text-center border-2 border-dashed border-zinc-200 rounded-3xl bg-white">
+                  <div className="h-20 w-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-6 text-3xl">📁</div>
+                  <h3 className="text-2xl font-black text-zinc-800 tracking-tight">Ready for Insights?</h3>
+                  <p className="text-zinc-500 mt-2 max-w-sm px-4">
+                    Upload a CSV file in the header to trigger the Automated EDA & Machine Learning engine.
+                  </p>
 
-              {/* LAYER 3: MAIN CONTENT AREA (Tabs) */}
-              <section className="bg-white border border-zinc-200 rounded-3xl shadow-sm overflow-hidden min-h-[600px] flex flex-col">
-                <nav className="flex border-b border-zinc-100 bg-zinc-50/50">
-                  {['overview', 'audit', 'correlations','ml_insights', 'recommendations'].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`px-8 py-5 text-[10px] font-black uppercase tracking-[0.15em] transition-all border-b-2 ${
-                        activeTab === tab 
-                        ? "border-blue-600 text-blue-600 bg-white" 
-                        : "border-transparent text-zinc-400 hover:text-zinc-600"
-                      }`}
-                    >
-                      {tab.replace('_', ' ')}
-                    </button>
-                  ))}
-                </nav>
+                </div>
+              )}
 
-                <div className="p-10 flex-1">
-                  {/* TAB: OVERVIEW */}
-                  {activeTab === 'overview' && (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-8">
-                      <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-3xl">
-                        <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">AI Executive Summary</h3>
-                        <p className="text-xl text-zinc-800 font-medium leading-relaxed italic">
-                          "{results.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}"
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         <div className="p-6 border border-zinc-100 rounded-2xl">
-                            <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-4">Dataset Integrity</h4>
-                            <p className="text-sm text-zinc-600">The engine has successfully indexed {results?.metadata?.total_cols} dimensions with a focus on variance-driven feature importance.</p>
-                         </div>
-                         <div className="p-6 bg-purple-50 border border-purple-100 rounded-2xl">
-                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-4">ML Capability</h4>
-                            <p className="text-sm text-purple-900">Unsupervised PCA has reduced the dataset into 2 primary components for structural visualization.</p>
-                         </div>
-                      </div>
+              {/* LOADING STATE */}
+              {(jobStatus === 'PROCESSING' || jobStatus === 'PENDING') && (
+                <div className="animate-pulse bg-blue-600 text-white p-6 md:p-8 rounded-3xl flex justify-between items-center shadow-xl shadow-blue-100">
+                  <div>
+                    <p className="text-lg font-black tracking-tight">🧠 Analyzing patterns...</p>
+                    <p className="text-sm opacity-80 font-medium">Calculating PCA coordinates and semantic executive summaries.</p>
+                  </div>
+                  <div className="h-10 w-10 border-4 border-blue-400 border-t-white rounded-full animate-spin shrink-0 ml-4"></div>
+                </div>
+              )}
+
+              {/* COMPLETED DASHBOARD */}
+              {jobStatus === 'COMPLETED' && results && (
+                <>
+                  {/* LAYER 2: KPI RIBBON */}
+                  <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <HealthGauge score={results?.metadata?.health_score || 0} />
+                    <MetricCard label="Total Rows" value={results?.metadata?.total_rows?.toLocaleString() || "0"} />
+                    <MetricCard label="Total Columns" value={results?.metadata?.total_cols || "0"} />
+                    <MetricCard
+                      label="Anomalies"
+                      value={Object.values(results?.outliers || {}).reduce((a, b) => a + b, 0)}
+                      color="text-amber-600"
+                    />
+                    <MetricCard
+                      label="Status"
+                      value={jobStatus === 'COMPLETED' ? 'Done' : 'Scanning...'}
+                      color="text-blue-600"
+                    />
+                  </section>
+
+                  {/* LAYER 3: MAIN CONTENT TABS */}
+                  <section className="bg-white border border-zinc-200 rounded-3xl shadow-sm overflow-hidden transition-all duration-500 hover:shadow-xl hover:shadow-zinc-200/50 min-h-[600px] flex flex-col">
+
+                    {/* Tab nav — DESKTOP ONLY (lg+). Mobile uses the sidebar. */}
+                    <nav className="hidden lg:flex border-b border-zinc-100 bg-zinc-50/50 overflow-x-auto">
+                      {modules.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`px-6 xl:px-8 py-5 text-[10px] font-black uppercase tracking-[0.15em] transition-all relative border-b-2 whitespace-nowrap ${
+                            activeTab === tab.id
+                              ? "border-blue-600 text-blue-600 bg-white"
+                              : "border-transparent text-zinc-400 hover:text-zinc-600"
+                          }`}
+                        >
+                          {tab.label}
+                          {activeTab === tab.id && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 animate-in fade-in zoom-in-x" />
+                          )}
+                        </button>
+                      ))}
+                    </nav>
+
+                    {/* Mobile: current tab title breadcrumb */}
+                    <div className="lg:hidden px-6 pt-5 pb-0">
+                      <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">
+                        {modules.find(m => m.id === activeTab)?.icon} {modules.find(m => m.id === activeTab)?.label}
+                      </p>
+                      <p className="text-[9px] text-zinc-400 font-medium mt-0.5">{results?.metadata?.file_name}</p>
                     </div>
-                  )}
 
-                  {/* TAB: DATA AUDIT */}
-                  {activeTab === 'audit' && (
-                    <div className="animate-in fade-in slide-in-from-left-4 duration-700 space-y-6">
-                      <div className="flex justify-between items-center">
-                      <h3 className="text-lg font-bold">Data Quality Audit</h3>
-                      <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest italic">Click a row to view univariate distribution</p>
-                      </div>
-                      <div className="overflow-hidden border border-zinc-100 rounded-2xl">
-                        <table className="w-full text-left text-sm border-collapse">
-                          <thead className="bg-zinc-50 text-zinc-500 uppercase text-[10px] font-bold">
-                            <tr>
-                              <th className="px-6 py-4">Column Name</th>
-                              <th className="px-6 py-4">Type</th>
-                              <th className="px-6 py-4">Missing Values</th>
-                              <th className="px-6 py-4">Outliers</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-50">
-                            {Object.keys(results?.metadata?.column_types || {}).map((col) => (
-                              <React.Fragment key={col}>
-                                {/* Main Row */}
-                                <tr 
-                                  onClick={() => setExpandedRow(expandedRow === col ? null : col)}
-                                  className={`cursor-pointer transition-colors ${expandedRow === col ? 'bg-blue-50/30' : 'hover:bg-zinc-50/50'}`}
-                                >
-                                  <td className="px-6 py-4 font-semibold text-zinc-800 flex items-center gap-2">
-                                    <span className={`text-[8px] transition-transform ${expandedRow === col ? 'rotate-90' : ''}`}>▶</span>
-                                    {col}
-                                  </td>
-                                  <td className="px-6 py-4 text-zinc-500 font-mono text-xs">{results?.metadata?.column_types[col]}</td>
-                                  <td className="px-6 py-4 text-zinc-500">{results?.metadata?.missing_values[col] || 0}</td>
-                                  <td className="px-6 py-4 text-zinc-500">{results?.outliers[col] || 0}</td>
+                    <div className="p-4 md:p-10 flex-1">
+
+                      {/* -------- TAB: OVERVIEW -------- */}
+                      {activeTab === 'overview' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-8">
+                          <div className="p-6 md:p-8 bg-zinc-50 border border-zinc-200 rounded-3xl transition-transform hover:scale-[1.005]">
+                            <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">AI Executive Summary</h3>
+                            <p className="text-lg md:text-xl text-zinc-800 font-medium leading-relaxed italic">
+                              {results?.metadata?.file_name || "Unknown Dataset"}
+                            </p>
+                            <p className="text-lg md:text-xl text-zinc-800 font-medium leading-relaxed italic">
+                              "{results.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}"
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="p-6 border border-zinc-100 rounded-2xl">
+                              <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-4">Dataset Integrity</h4>
+                              <p className="text-sm text-zinc-600">
+                                The engine has successfully indexed {results?.metadata?.total_cols} dimensions with a focus on variance-driven feature importance.
+                              </p>
+                            </div>
+                            <div className="p-6 bg-purple-50 border border-purple-100 rounded-2xl">
+                              <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-4">ML Capability</h4>
+                              <p className="text-sm text-purple-900">
+                                Unsupervised PCA has reduced the dataset into 2 primary components for structural visualization.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* -------- TAB: DATA AUDIT -------- */}
+                      {activeTab === 'audit' && (
+                        <div className="animate-in fade-in slide-in-from-left-4 duration-700 space-y-10">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                            {/* Data Type Pie */}
+                            <div className="lg:col-span-1 p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm transition-all duration-300 hover:shadow-md">
+                              <div className="mb-4">
+                                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-4">Metadata Profile</h4>
+                                <p className="text-xs text-zinc-500">Feature type distribution</p>
+                              </div>
+                              <div className="h-64 w-full">
+                                <PlotlyChart
+                                  data={[{
+                                    values: results?.ml_insights?.quality_metrics?.dtype_breakdown?.map(d => d.count),
+                                    labels: results?.ml_insights?.quality_metrics?.dtype_breakdown?.map(d => d.type),
+                                    type: 'pie',
+                                    hole: 0.5,
+                                    marker: { colors: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b'] },
+                                    textinfo: 'label+percent',
+                                    textposition: 'outside',
+                                    
+                                    hoverinfo: 'label+value'
+                                  }]}
+                                  layout={{ autosize: true,margin: { t: 0, b: 0, l: 10, r: 10 },  showlegend: false }}
+                                  useResizeHandler={true}
+                                  className="w-full h-full"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Missing Value Linkage */}
+                            <div className="lg:col-span-2 p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex justify-between items-start mb-4">
+                                <div>
+                                  <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Missing Value Linkage</h4>
+                                  <p className="text-xs text-zinc-500">Dendrogram logic: Correlation between null values</p>
+                                </div>
+                                <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded">Cluster Analysis</span>
+                              </div>
+                              <div className="h-64 w-full">
+                                {results?.ml_insights?.quality_metrics?.null_correlation?.labels?.length > 0 ? (
+                                  <PlotlyChart
+                                    data={[{
+                                      z: results?.ml_insights?.quality_metrics?.null_correlation?.z,
+                                      x: results?.ml_insights?.quality_metrics?.null_correlation?.labels,
+                                      y: results?.ml_insights?.quality_metrics?.null_correlation?.labels,
+                                      type: 'heatmap',
+                                      colorscale: 'Purples',
+                                      showscale: true,
+                                      zmin: -1, zmax: 1, xgap: 1, ygap: 1,
+                                    }]}
+                                    layout={{
+                                      autosize: true,
+                                      margin: { t: 10, r: 10, b: 60, l: 100 },
+                                      xaxis: { tickangle: -45, tickfont: { size: 9, color: '#71717a' } },
+                                      yaxis: { tickfont: { size: 9, color: '#71717a' } }
+                                      
+                                    }}
+                                    useResizeHandler={true}
+                                    className="w-full h-full"
+                                  />
+                                ) : (
+                                  <div className="h-full flex flex-col items-center justify-center bg-zinc-50/50 rounded-2xl border border-dashed border-zinc-200">
+                                    <span className="text-2xl mb-2">✨</span>
+                                    <p className="text-xs text-zinc-400 font-medium">No missing values detected in this dataset.</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                            <h3 className="text-lg font-bold">Data Quality Audit</h3>
+                            <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest italic">
+                              Click a row to view univariate distribution
+                            </p>
+                          </div>
+
+                          <div className="overflow-x-auto overflow-hidden border border-zinc-100 rounded-2xl">
+                            <table className="w-full text-left text-sm border-collapse min-w-[500px]">
+                              <thead className="bg-zinc-50 text-zinc-500 uppercase text-[10px] font-bold">
+                                <tr>
+                                  <th className="px-6 py-4">Column Name</th>
+                                  <th className="px-6 py-4">Type</th>
+                                  <th className="px-6 py-4">Missing Values</th>
+                                  <th className="px-6 py-4">Outliers</th>
                                 </tr>
-
-                                {/* Expandable Details Row */}
-                                {expandedRow === col && (
-                                  <tr>
-                                    <td colSpan="4" className="bg-zinc-50/30 px-6 py-8 animate-in slide-in-from-top-2 duration-300">
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        {/* Histogram */}
-                                        <DistributionChart 
-                                          title="Value Distribution" 
-                                          data={results?.univariate?.[col]?.histogram} 
-                                        />
-                                        
-                                        {/* Statistical Spread */}
-                                        <div className="flex flex-col justify-center">
-                                          <h4 className="text-[9px] font-bold text-zinc-400 uppercase mb-4 tracking-widest">Statistical Spread</h4>
-                                          <div className="grid grid-cols-2 gap-4">
-                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
-                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">Min - Max</p>
-                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.min ?? 'N/A'} — {results?.univariate?.[col]?.stats?.max ?? 'N/A'}</p>
-                                            </div>
-                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
-                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">Median (Q2)</p>
-                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.median ?? 'N/A'}</p>
-                                            </div>
-                                            <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
-                                              <p className="text-[8px] text-zinc-400 uppercase font-bold">IQR (Q1 - Q3)</p>
-                                              <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.q1 ?? 'N/A'} — {results?.univariate?.[col]?.stats?.q3 ?? 'N/A'}</p>
-                                            </div>
-                                            <div className="p-3 bg-blue-600 rounded-lg text-white shadow-md">
-                                              <p className="text-[8px] opacity-70 uppercase font-bold">AI Insight</p>
-                                              <p className="text-[10px] leading-tight">
-                                                {results?.outliers[col] > 0 ? 'High outlier density detected. Consider capping.' : 'Data distribution appears stable.'}
-                                              </p>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-50">
+                                {Object.keys(results?.metadata?.column_types || {}).map((col) => (
+                                  <React.Fragment key={col}>
+                                    <tr
+                                      onClick={() => setExpandedRow(expandedRow === col ? null : col)}
+                                      className={`cursor-pointer transition-colors ${expandedRow === col ? 'bg-blue-50/30' : 'hover:bg-zinc-50/50'}`}
+                                    >
+                                      <td className="px-6 py-4 font-semibold text-zinc-800 flex items-center gap-2">
+                                        <span className={`text-[8px] transition-transform ${expandedRow === col ? 'rotate-90' : ''}`}>▶</span>
+                                        {col}
+                                      </td>
+                                      <td className="px-6 py-4 text-zinc-500 font-mono text-xs">{results?.metadata?.column_types[col]}</td>
+                                      <td className="px-6 py-4 text-zinc-500">{results?.metadata?.missing_values[col] || 0}</td>
+                                      <td className="px-6 py-4 text-zinc-500">{results?.outliers[col] || 0}</td>
+                                    </tr>
+                                    {expandedRow === col && (
+                                      <tr>
+                                        <td colSpan="4" className="bg-zinc-50/30 px-6 py-8 animate-in slide-in-from-top-2 duration-300">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            <DistributionChart title="Value Distribution" data={results?.univariate?.[col]?.histogram} />
+                                            <div className="flex flex-col justify-center">
+                                              <h4 className="text-[9px] font-bold text-zinc-400 uppercase mb-4 tracking-widest">Statistical Spread</h4>
+                                              <div className="grid grid-cols-2 gap-4">
+                                                <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                                  <p className="text-[8px] text-zinc-400 uppercase font-bold">Min - Max</p>
+                                                  <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.min ?? 'N/A'} — {results?.univariate?.[col]?.stats?.max ?? 'N/A'}</p>
+                                                </div>
+                                                <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                                  <p className="text-[8px] text-zinc-400 uppercase font-bold">Median (Q2)</p>
+                                                  <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.median ?? 'N/A'}</p>
+                                                </div>
+                                                <div className="p-3 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                                                  <p className="text-[8px] text-zinc-400 uppercase font-bold">IQR (Q1 - Q3)</p>
+                                                  <p className="text-xs font-mono">{results?.univariate?.[col]?.stats?.q1 ?? 'N/A'} — {results?.univariate?.[col]?.stats?.q3 ?? 'N/A'}</p>
+                                                </div>
+                                                <div className="p-3 bg-blue-600 rounded-lg text-white shadow-md">
+                                                  <p className="text-[8px] opacity-70 uppercase font-bold">AI Insight</p>
+                                                  <p className="text-[10px] leading-tight">
+                                                    {results?.outliers[col] > 0 ? 'High outlier density detected. Consider capping.' : 'Data distribution appears stable.'}
+                                                  </p>
+                                                </div>
+                                              </div>
                                             </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                     {activeTab === 'correlations' && (
-                   <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-8">
-                   <div className="flex justify-between items-end">
-                   <div>
-                    <h3 className="text-lg font-bold text-zinc-900">Feature Relationships</h3>
-                    <p className="text-xs text-zinc-500">Correlation Matrix and Bivariate Analysis</p>
-                   </div>
-                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                     Method: Pearson
-                     </span>
-                   </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                     {/* -------- TAB: CORRELATIONS -------- */}
+{activeTab === 'correlations' && (
+  <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-10 w-full">
+    
+    {/* Header & KPI Section */}
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
+      <div>
+        <h3 className="text-lg font-bold text-zinc-900">Feature Relationships</h3>
+        <p className="text-xs text-zinc-500">Analysis of the most influential feature interactions</p>
+      </div>
+      <span className="self-start sm:self-auto text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded italic border border-blue-100">
+        Method: Pearson Correlation
+      </span>
+    </div>
+
+    {/* Top Level: Heatmap & Strongest Pattern */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       
-                   {/* 1. CUSTOM HEATMAP GRID */}
-                    <div className="p-6 bg-white border border-zinc-100 rounded-3xl overflow-hidden">
-                    <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Correlation Heatmap</h4>
-                    <div className="overflow-auto">
-                    <div className="inline-block min-w-full align-middle">
-                      <div className="grid" style={{ 
-                    gridTemplateColumns: `repeat(${Object.keys(results?.correlations || {}).length + 1}, minmax(50px, 1fr))` 
-                        }}>
-              {/* Top Header Row */}
-              <div className="h-10"></div>
-              {Object.keys(results?.correlations || {}).map(col => (
-                <div key={col} className="text-[9px] font-bold text-zinc-400 truncate px-1 text-center self-end pb-2 uppercase rotate-45 origin-bottom-left">
-                  {col}
-                </div>
-              ))}
+      {/* 1. PLOTLY HEATMAP */}
+      <div className="p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm">
+        <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Influence Heatmap</h4>
+        <div className="h-80 w-full">
+          <PlotlyChart 
+            data={[{
+              z: results?.ml_insights?.influential_correlations?.z,
+              x: results?.ml_insights?.influential_correlations?.x,
+              y: results?.ml_insights?.influential_correlations?.y,
+              type: 'heatmap',
+              colorscale: 'RdBu',
+              zmin: -1,
+              zmax: 1,
+              showscale: true,
+              xgap: 2,
+              ygap: 2
+            }]}
+            layout={{
+              autosize: true,
+              margin: { t: 10, r: 10, b: 50, l: 80 },
+              xaxis: { tickangle: -45, font: { size: 10 } },
+              yaxis: { font: { size: 10 } }
+              
+            }}
+             useResizeHandler={true}
+             className="w-full h-full"
 
-              {/* Matrix Rows */}
-              {Object.entries(results?.correlations || {}).map(([rowName, rowValues]) => (
-                <React.Fragment key={rowName}>
-                  <div className="text-[9px] font-bold text-zinc-400 truncate pr-2 flex items-center justify-end uppercase">
-                    {rowName}
-                  </div>
-                  {Object.entries(rowValues).map(([colName, value]) => {
-                    // Color Logic: Red for negative, Blue for positive, White for neutral
-                    const opacity = Math.abs(value);
-                    const bgColor = value > 0 ? `rgba(59, 130, 246, ${opacity})` : `rgba(239, 68, 68, ${opacity})`;
-                    return (
-                      <div 
-                        key={colName}
-                        title={`${rowName} vs ${colName}: ${value.toFixed(2)}`}
-                        className="aspect-square border border-white/20 flex items-center justify-center text-[8px] font-medium transition-transform hover:scale-110 hover:z-10 cursor-help"
-                        style={{ backgroundColor: bgColor, color: opacity > 0.5 ? 'white' : '#71717a' }}
-                      >
-                        {opacity > 0.3 ? value.toFixed(1) : ''}
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
+          />
         </div>
       </div>
 
-      {/* 2. BIVARIATE SCATTER PLOT */}
-      <div className="p-6 bg-white border border-zinc-100 rounded-3xl">
-        <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Bivariate Relationship (Top Influencers)</h4>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis 
-                type="number" 
-                dataKey="x" 
-                name="Feature A" 
-                label={{ value: 'Component 1', position: 'bottom', fontSize: 10, fill: '#94a3b8' }} 
-                tick={{fontSize: 10}}
-              />
-              <YAxis 
-                type="number" 
-                dataKey="y" 
-                name="Feature B" 
-                label={{ value: 'Component 2', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }} 
-                tick={{fontSize: 10}}
-              />
-              <Tooltip 
-                cursor={{ strokeDasharray: '3 3' }} 
-                contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '12px' }}
-              />
-              <Scatter 
-                name="Data Relationship" 
-                data={results.ml_insights?.pca_data?.map(p => ({ x: p[0], y: p[1] }))} 
-                fill="#3b82f6" 
-                fillOpacity={0.6} 
-              />
-               </ScatterChart>
-               </ResponsiveContainer>
+      {/* 2. STRONGEST INTERACTION (Auto-detected) */}
+      {(() => {
+        const gallery = results?.ml_insights?.bivariate_gallery || [];
+        const topPair = gallery.length > 0 
+          ? gallery.reduce((prev, curr) => (Math.abs(curr.corr) > Math.abs(prev.corr)) ? curr : prev)
+          : null;
+
+        return (
+          <div className="p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm transition-all duration-300 hover:shadow-md">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Strongest Interaction</h4>
+                {topPair && <p className="text-[10px] text-zinc-500 mt-1 font-medium italic">Highest statistical significance</p>}
               </div>
-              <p className="mt-4 text-[10px] text-zinc-400 italic text-center">
-                Note: This scatter plot visualizes the interaction between the two most mathematically significant components.
-               </p>
+              {topPair && (
+                <span className="text-[9px] font-mono bg-blue-50 px-2 py-0.5 rounded text-blue-600 border border-blue-100 font-bold">
+                  r = {topPair.corr.toFixed(2)}
+                </span>
+              )}
+            </div>
+            <div className="h-80 w-full">
+              {topPair ? (
+                <PlotlyChart 
+                  data={[
+                    {
+                      x: topPair.data.map(v => v[topPair.x_name]),
+                      y: topPair.data.map(v => v[topPair.y_name]),
+                      mode: 'markers',
+                      type: 'scatter',
+                      marker: { color: '#3b82f6', opacity: 0.5, size: 8, line: { width: 1, color: 'white' } }
+                    },
+                    {
+                      x: topPair.regression.x,
+                      y: topPair.regression.y,
+                      mode: 'lines',
+                      type: 'scatter',
+                      line: { color: '#ef4444', width: 2, dash: 'dot' }
+                    }
+                  ]}
+                  layout={{
+                    autosize: true,
+                    margin: { t: 10, r: 10, b: 40, l: 40 },
+                    xaxis: { title: { text: topPair.x_name, font: { size: 10 } }, gridcolor: '#f1f5f9'},
+                    yaxis: { title: { text: topPair.y_name, font: { size: 10 } }, gridcolor: '#f1f5f9' },
+                    showlegend: false,
+                    hovermode: 'closest'
+                    
+                  }}
+                  useResizeHandler={true}
+                  className="w-full h-full"
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-zinc-400 italic bg-zinc-50/50 rounded-2xl border border-dashed border-zinc-200">
+                  Calculating patterns...
                 </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
 
-                 </div>
+    {/* 3. BIVARIATE GALLERY (Fixed styling for long names) */}
+    <div className="w-full pt-10 border-t border-zinc-100">
+      <div className="max-w-full lg:max-w-[95%] mx-auto space-y-8">
+        <div className="flex flex-col items-center text-center px-4">
+          <h3 className="text-lg font-bold text-zinc-900">Relationship Gallery</h3>
+          <p className="text-xs text-zinc-500 max-w-md mt-1">Cross-interaction of influential features</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {results?.ml_insights?.bivariate_gallery?.map((pair, idx) => (
+            <div key={idx} className="p-5 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-lg transition-all flex flex-col">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="min-w-0 flex-1 flex flex-col">
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Correlation</span>
+                  <span className="text-xs font-bold text-zinc-800 truncate block" title={`${pair.x_name} vs ${pair.y_name}`}>
+                    {pair.x_name} <span className="text-zinc-300 font-normal mx-0.5">×</span> {pair.y_name}
+                  </span>
                 </div>
-                 )}    
-                  {/* TAB: ML INSIGHTS */}
-                  {activeTab === 'ml_insights' && (
-                    <div className="animate-in fade-in zoom-in-95 duration-700 space-y-8">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* Bar Chart */}
-                        <div className="p-6 border border-zinc-100 rounded-3xl">
-                          <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Feature Influence (Unsupervised)</h4>
-                          <div className="h-72">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={Object.entries(results.ml_insights?.feature_influence || {}).map(([name, value]) => ({ name, value }))} layout="vertical">
-                                <XAxis type="number" hide />
-                                <YAxis dataKey="name" type="category" width={100} fontSize={10} tick={{fill: '#a1a1aa'}} />
-                                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
-                                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={15} />
-                              </BarChart>
-                            </ResponsiveContainer>
+                <div className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-mono font-bold whitespace-nowrap self-start ${
+                  Math.abs(pair.corr) > 0.5 ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-zinc-50 text-zinc-500 border border-zinc-100'
+                }`}>
+                  r = {pair.corr.toFixed(2)}
+                </div>
+              </div>
+
+              <div className="h-56 w-full">
+                <PlotlyChart 
+                  data={[
+                    {
+                      x: pair.data.map(v => v[pair.x_name]),
+                      y: pair.data.map(v => v[pair.y_name]),
+                      mode: 'markers', type: 'scatter',
+                      marker: { color: '#3b82f6', opacity: 0.3, size: 5 }
+                    },
+                    {
+                      x: pair.regression.x,
+                      y: pair.regression.y,
+                      mode: 'lines', type: 'scatter',
+                      line: { color: '#ef4444', width: 2, dash: 'dot' }
+                    }
+                  ]}
+                  layout={{
+                    autosize: true,
+                    margin: { t: 5, r: 5, b: 25, l: 25 },
+                    xaxis: { showgrid: false, tickfont: {size: 8}, zeroline: false },
+                    yaxis: { showgrid: true, gridcolor: '#f8fafc', tickfont: {size: 8}, zeroline: false },
+                    showlegend: false,
+                    
+                  }}
+                  useResizeHandler={true}
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+                      {/* -------- TAB: DISTRIBUTION -------- */}
+                      {activeTab === 'distribution' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-8">
+                          <div>
+                            <h3 className="text-lg font-bold text-zinc-900">Feature Distributions</h3>
+                            <p className="text-xs text-zinc-500">Univariate density and statistical spread (Kernel Density Estimation)</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {Object.entries(results?.ml_insights?.distribution_analysis || {}).map(([col, data]) => (
+                              <div key={col} className="p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-xl hover:scale-[1.01] transition-all duration-300 group">
+                                <div className="flex justify-between items-start mb-4">
+                                  <h4 className="font-bold text-zinc-800 group-hover:text-blue-600 transition-colors">{col}</h4>
+                                  <span className="text-[9px] bg-purple-50 text-purple-600 px-2 py-1 rounded-full font-bold uppercase tracking-tighter">
+                                    Statistical Density
+                                  </span>
+                                </div>
+                                <div className="h-72 w-full">
+                                  <PlotlyChart
+                                    data={[{
+                                      type: 'violin',
+                                      y: data.raw_sample,
+                                      points: 'none',
+                                      box: { visible: true },
+                                      line: { color: '#3b82f6' },
+                                      fillcolor: 'rgba(59, 130, 246, 0.15)',
+                                      meanline: { visible: true, color: '#1d4ed8' },
+                                      bandwidth: 0.5
+                                    }]}
+                                    layout={{
+                                      autosize: true,
+                                      margin: { t: 10, b: 30, l: 40, r: 10 },
+                                      yaxis: { zeroline: false, gridcolor: '#f1f5f9' },
+                                      xaxis: { showgrid: false },
+                                      
+                                    }}
+                                    useResizeHandler={true}
+                                    className="w-full h-full"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-zinc-50">
+                                  <div className="text-center">
+                                    <p className="text-[8px] text-zinc-400 uppercase font-bold">Min</p>
+                                    <p className="text-xs font-mono">{data.stats.min.toFixed(1)}</p>
+                                  </div>
+                                  <div className="text-center border-x border-zinc-100">
+                                    <p className="text-[8px] text-zinc-400 uppercase font-bold">Median</p>
+                                    <p className="text-xs font-mono">{data.stats.median.toFixed(1)}</p>
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="text-[8px] text-zinc-400 uppercase font-bold">Max</p>
+                                    <p className="text-xs font-mono">{data.stats.max.toFixed(1)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
+                      )}
 
-                        {/* Scatter Plot */}
-                        <div className="p-6 border border-zinc-100 rounded-3xl">
-                          <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Data Structure Mapping (PCA)</h4>
-                          <div className="h-72">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <ScatterChart>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                <XAxis type="number" dataKey="x" hide />
-                                <YAxis type="number" dataKey="y" hide />
-                                <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                                <Scatter data={results.ml_insights?.pca_data?.map(p => ({ x: p[0], y: p[1] }))} fill="#8b5cf6" fillOpacity={0.4} />
-                              </ScatterChart>
-                            </ResponsiveContainer>
+                      {/* -------- TAB: ML INSIGHTS -------- */}
+                      {activeTab === 'ml_insights' && (
+                        <div className="animate-in fade-in zoom-in-95 duration-700 space-y-8">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="p-6 border border-zinc-100 rounded-3xl">
+                              <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Feature Influence (Unsupervised)</h4>
+                              <div className="h-72">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart
+                                    data={Object.entries(results.ml_insights?.feature_influence || {}).map(([name, value]) => ({ name, value }))}
+                                    layout="vertical"
+                                  >
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={100} fontSize={10} tick={{ fill: '#a1a1aa' }} />
+                                    <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
+                                    <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={15} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                            <div className="p-6 border border-zinc-100 rounded-3xl">
+                              <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-6 tracking-widest">Data Structure Mapping (PCA)</h4>
+                              <div className="h-72">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis type="number" dataKey="x" hide />
+                                    <YAxis type="number" dataKey="y" hide />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Scatter
+                                      data={results.ml_insights?.pca_data?.map(p => ({ x: p[0], y: p[1] }))}
+                                      fill="#8b5cf6"
+                                      fillOpacity={0.4}
+                                    />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      )}
 
-                  {/* TAB: RECOMMENDATIONS */}
-                  {activeTab === 'recommendations' && (
-                    <div className="animate-in fade-in slide-in-from-right-4 duration-700 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="p-8 bg-white border border-purple-100 rounded-3xl shadow-sm">
-                        <span className="px-2 py-1 bg-purple-50 text-purple-600 text-[10px] font-black rounded uppercase tracking-widest border border-purple-100">AI Hypotheses</span>
-                        <ul className="mt-6 space-y-4">
-                          {results.ml_insights?.ai_observations?.hypotheses?.map((h, i) => (
-                            <li key={i} className="group flex items-start text-sm text-zinc-700 leading-relaxed italic">
-                              <span className="mr-3 mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
-                              "{h}"
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-600 text-[10px] font-black rounded uppercase tracking-widest">Cleaning Strategy</span>
-                        <p className="mt-6 text-blue-900 text-sm leading-relaxed font-medium">
-                          {results.ml_insights?.ai_observations?.cleaning_strategy || results.ml_insights?.ai_observations?.cleaning_tips}
-                        </p>
-                      </div>
+                      {/* -------- TAB: RECOMMENDATIONS -------- */}
+                      {activeTab === 'recommendations' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-700 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <div className="p-8 bg-white border border-purple-100 rounded-3xl shadow-sm">
+                            <span className="px-2 py-1 bg-purple-50 text-purple-600 text-[10px] font-black rounded uppercase tracking-widest border border-purple-100">
+                              AI Hypotheses
+                            </span>
+                            <ul className="mt-6 space-y-4">
+                              {results.ml_insights?.ai_observations?.hypotheses?.map((h, i) => (
+                                <li key={i} className="flex items-start text-sm text-zinc-700 leading-relaxed italic">
+                                  <span className="mr-3 mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
+                                  "{h}"
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl">
+                            <span className="px-2 py-1 bg-blue-100 text-blue-600 text-[10px] font-black rounded uppercase tracking-widest">
+                              Cleaning Strategy
+                            </span>
+                            <p className="mt-6 text-blue-900 text-sm leading-relaxed font-medium">
+                              {results.ml_insights?.ai_observations?.cleaning_strategy || results.ml_insights?.ai_observations?.cleaning_tips}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                     </div>
-                  )}
+                  </section>
+                </>
+              )}
+
+              {/* ERROR STATE */}
+              {jobError && (
+                <div className="p-8 bg-red-50 border border-red-200 rounded-3xl text-red-700 text-center">
+                  <p className="font-bold text-lg mb-2">Analysis Failed</p>
+                  <p className="text-sm opacity-80">{jobError}</p>
+                  <button
+                    onClick={() => setCurrentJobId(null)}
+                    className="mt-4 text-xs font-black uppercase tracking-widest underline"
+                  >
+                    Try Another File
+                  </button>
                 </div>
-              </section>
+              )}
             </>
-          )}
 
-          {jobError && (
-            <div className="p-8 bg-red-50 border border-red-200 rounded-3xl text-red-700 text-center">
-              <p className="font-bold text-lg mb-2">Analysis Failed</p>
-              <p className="text-sm opacity-80">{jobError}</p>
-              <button onClick={() => setCurrentJobId(null)} className="mt-4 text-xs font-black uppercase tracking-widest underline">Try Another File</button>
+          ) : (
+            /* HISTORY MODE */
+            <div className="py-20 text-center animate-in zoom-in-95 duration-500">
+              <div className="h-16 w-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">🕒</div>
+              <h3 className="text-xl font-bold text-zinc-300 uppercase tracking-widest">History coming in Sprint 1</h3>
             </div>
           )}
+
         </div>
       </main>
     </div>
   );
 }
 
-// Reusable Metric Card Component
+// ===================== REUSABLE COMPONENTS =====================
+
 function MetricCard({ label, value, color = "text-zinc-900" }) {
   return (
-    <div className="bg-white p-6 border border-zinc-200 rounded-2xl shadow-sm hover:border-blue-200 transition-all hover:shadow-md group">
-      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors">{label}</p>
-      <p className={`text-2xl font-black tracking-tight ${color}`}>{value}</p>
+    <div className="bg-white p-3 lg:p-4 border border-zinc-200 rounded-2xl shadow-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:border-blue-100 group cursor-default overflow-hidden">
+      <p className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors truncate">{label}</p>
+      <p className={`text-lg lg:text-xl xl:text-2xl font-black tracking-tight truncate ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function HealthGauge({ score }) {
+  const getColor = (s) => {
+    if (s >= 90) return "#10b981";
+    if (s >= 70) return "#f59e0b";
+    return "#ef4444";
+  };
+  const color = getColor(score);
+  const strokeDasharray = `${score}, 100`;
+
+  return (
+    <div className="bg-white p-3 lg:p-4 border border-zinc-200 rounded-2xl shadow-sm transition-all duration-300 hover:scale-[1.02] flex items-center gap-2 lg:gap-3 group col-span-2 sm:col-span-1 overflow-hidden">
+      <div className="relative h-12 w-12 lg:h-14 lg:w-14 shrink-0">
+        <svg viewBox="0 0 36 36" className="h-full w-full transform -rotate-90">
+          <circle cx="18" cy="18" r="16" fill="none" className="stroke-zinc-100" strokeWidth="3" />
+          <circle
+            cx="18" cy="18" r="16" fill="none"
+            stroke={color} strokeWidth="3"
+            strokeDasharray={strokeDasharray}
+            strokeLinecap="round"
+            className="transition-all duration-1000 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[9px] font-black" style={{ color }}>{Math.round(score)}%</span>
+        </div>
+      </div>
+  <div className="min-w-0">
+    <p className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest group-hover:text-blue-400 transition-colors truncate">AI Health Score</p>
+      <p className="text-xs font-bold text-zinc-700 truncate">
+          {score >= 90 ? "Excellent" : score >= 70 ? "Needs Review" : "Critical"}
+        </p>
+      </div>
     </div>
   );
 }
