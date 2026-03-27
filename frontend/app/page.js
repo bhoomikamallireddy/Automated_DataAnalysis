@@ -311,33 +311,55 @@ export default function Home() {
                     <div className="p-4 md:p-10 flex-1">
 
                       {/* -------- TAB: OVERVIEW -------- */}
+
                       {activeTab === 'overview' && (
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-8">
-                          <div className="p-6 md:p-8 bg-zinc-50 border border-zinc-200 rounded-3xl transition-transform hover:scale-[1.005]">
-                            <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">AI Executive Summary</h3>
-                            <p className="text-lg md:text-xl text-zinc-800 font-medium leading-relaxed italic">
-                              {results?.metadata?.file_name || "Unknown Dataset"}
-                            </p>
-                            <p className="text-lg md:text-xl text-zinc-800 font-medium leading-relaxed italic">
-                              "{results.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}"
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="p-6 border border-zinc-100 rounded-2xl">
-                              <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-4">Dataset Integrity</h4>
-                              <p className="text-sm text-zinc-600">
-                                The engine has successfully indexed {results?.metadata?.total_cols} dimensions with a focus on variance-driven feature importance.
-                              </p>
-                            </div>
-                            <div className="p-6 bg-purple-50 border border-purple-100 rounded-2xl">
-                              <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-4">ML Capability</h4>
-                              <p className="text-sm text-purple-900">
-                                Unsupervised PCA has reduced the dataset into 2 primary components for structural visualization.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-8">
+    
+                      {/* AI EXECUTIVE SUMMARY CARD */}
+                     <div className="p-6 md:p-8 bg-zinc-50 border border-zinc-200 rounded-3xl transition-transform hover:scale-[1.005]">
+                        <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest">
+                        {results?.ml_insights?.ai_observations?.is_fallback ? "System Data Insights" : "AI Executive Summary"}
+                      </h3>
+                      {results?.ml_insights?.ai_observations?.is_fallback && (
+                      <span className="text-[8px] bg-zinc-200 px-2 py-0.5 rounded text-zinc-600 font-bold tracking-tighter">
+                      DETERMINISTIC MODE
+                        </span>
+                       )}
+                     </div>
+
+               {/* Dataset Label */}
+             <div className="mb-2 flex items-center gap-2">
+               <span className="h-1 w-1 rounded-full bg-blue-400"></span>
+               <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-tight">
+             Analysis for: {results?.metadata?.file_name || "Unknown Dataset"}
+           </p>
+        </div>
+
+      {/* Main Summary Hero Text */}
+        <p className="text-lg md:text-2xl text-zinc-800 font-medium leading-relaxed italic">
+          "{results?.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}"
+      </p>
+    </div>
+
+    {/* DATASET STATS GRID */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="p-6 border border-zinc-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+        <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-4 tracking-widest">Dataset Integrity</h4>
+           <p className="text-sm text-zinc-600 leading-relaxed">
+             The engine has successfully indexed <span className="font-bold text-zinc-800">{results?.metadata?.total_cols}</span> dimensions with a focus on variance-driven feature importance.
+           </p>
+           </div>
+      
+            <div className="p-6 bg-purple-50/50 border border-purple-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                  <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-4 tracking-widest">ML Capability</h4>
+                     <p className="text-sm text-purple-900 leading-relaxed">
+                            Unsupervised <span className="font-bold">PCA</span> has reduced the dataset into 2 primary components for structural visualization and clustering analysis.
+                      </p>
+                  </div>
+               </div>
+             </div>
+                    )}
 
                       {/* -------- TAB: DATA AUDIT -------- */}
                       {activeTab === 'audit' && (
@@ -755,33 +777,85 @@ export default function Home() {
                           </div>
                         </div>
                       )}
+{/* -------- TAB: RECOMMENDATIONS -------- */}
+{activeTab === 'recommendations' && (
+  <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-8">
+    
+    {/* TOP ROW: Hypotheses & Cleaning */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* 1. AI HYPOTHESES */}
+      <div className="p-8 bg-white border border-purple-100 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+        <span className="px-2 py-1 bg-purple-50 text-purple-600 text-[10px] font-black rounded uppercase tracking-widest border border-purple-100">
+          AI Hypotheses
+        </span>
+        <ul className="mt-6 space-y-4">
+          {results.ml_insights?.ai_observations?.hypotheses?.map((h, i) => (
+            <li key={i} className="group flex items-start text-sm text-zinc-700 leading-relaxed italic">
+              <span className="mr-3 mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
+              "{typeof h === 'string' ? h : (h.question || JSON.stringify(h))}"
+            </li>
+          ))}
+        </ul>
+      </div>
 
-                      {/* -------- TAB: RECOMMENDATIONS -------- */}
-                      {activeTab === 'recommendations' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-700 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                          <div className="p-8 bg-white border border-purple-100 rounded-3xl shadow-sm">
-                            <span className="px-2 py-1 bg-purple-50 text-purple-600 text-[10px] font-black rounded uppercase tracking-widest border border-purple-100">
-                              AI Hypotheses
-                            </span>
-                            <ul className="mt-6 space-y-4">
-                              {results.ml_insights?.ai_observations?.hypotheses?.map((h, i) => (
-                                <li key={i} className="flex items-start text-sm text-zinc-700 leading-relaxed italic">
-                                  <span className="mr-3 mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
-                                  "{h}"
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl">
-                            <span className="px-2 py-1 bg-blue-100 text-blue-600 text-[10px] font-black rounded uppercase tracking-widest">
-                              Cleaning Strategy
-                            </span>
-                            <p className="mt-6 text-blue-900 text-sm leading-relaxed font-medium">
-                              {results.ml_insights?.ai_observations?.cleaning_strategy || results.ml_insights?.ai_observations?.cleaning_tips}
-                            </p>
-                          </div>
-                        </div>
-                      )}
+      {/* 2. CLEANING STRATEGY */}
+      <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+        <span className="px-2 py-1 bg-blue-100 text-blue-600 text-[10px] font-black rounded uppercase tracking-widest border border-blue-200">
+          Cleaning Strategy
+        </span>
+        <p className="mt-6 text-blue-900 text-sm leading-relaxed font-medium">
+          {typeof results.ml_insights?.ai_observations?.cleaning_tips === 'string' 
+            ? results.ml_insights?.ai_observations?.cleaning_tips 
+            : "Refer to the data audit for specific cleaning recommendations."}
+        </p>
+      </div>
+    </div>
+
+    {/* 3. NEW: FEATURE SUGGESTION CARD (ENGINEERING) */}
+    <div className="p-8 bg-zinc-900 rounded-[2.5rem] shadow-2xl shadow-blue-900/10 border border-zinc-800">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <span className="px-2 py-1 bg-zinc-800 text-zinc-400 text-[10px] font-black rounded uppercase tracking-widest border border-zinc-700">
+            Semantic Expansion
+          </span>
+          <h3 className="text-xl font-bold text-white mt-2">Engineered Feature Suggestions</h3>
+        </div>
+        <div className="hidden md:block h-px flex-1 bg-zinc-800 mx-8"></div>
+        <span className="text-[10px] font-mono text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+          GEN-AI POWERED
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {results.ml_insights?.ai_observations?.feature_suggestions?.map((s, i) => {
+    // DEFENSIVE EXTRACTION: Handle string, {name, description}, or {suggestion}
+    const suggestionTitle = typeof s === 'string' 
+      ? s 
+      : (s.name || s.suggestion || "New Feature");
+      
+    const suggestionDesc = typeof s === 'object' && s.description 
+      ? s.description 
+      : "";
+        return (
+          <div key={i} className="p-6 bg-zinc-800/40 border border-zinc-700/50 rounded-2xl group hover:border-blue-500/50 transition-all cursor-default">
+            <div className="h-8 w-8 bg-zinc-800 text-blue-400 rounded-lg flex items-center justify-center mb-4 text-xs font-black shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              0{i + 1}
+            </div>
+            <p className="text-sm text-zinc-100 font-bold leading-tight mb-2">
+              {suggestionTitle}
+            </p>
+             {suggestionDesc && (
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            {suggestionDesc}
+          </p>
+             )}
+          </div>
+        );
+       })}
+      </div>
+    </div>
+  </div>
+)}
 
                     </div>
                   </section>
