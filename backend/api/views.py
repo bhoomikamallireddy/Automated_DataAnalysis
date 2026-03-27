@@ -4,6 +4,7 @@ from django_q.tasks import async_task
 from .models import AnalysisJob
 from .tasks import run_pipeline
 from .serializers import AnalysisJobSerializer
+from django.db import transaction
 
 class AnalysisJobViewSet(viewsets.ModelViewSet):
     queryset = AnalysisJob.objects.all()
@@ -16,6 +17,6 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
 
         # Trigger the background task and return immediately!
         #Lets analysis handle asynchronously files
-        async_task(run_pipeline, instance.id)
+        transaction.on_commit(lambda: async_task(run_pipeline, instance.id))
     
             
