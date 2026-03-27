@@ -90,6 +90,10 @@ DATABASES = {
     }
 }
 #172.23.144.1 
+# 'HOST': '172.30.160.1',
+ 
+#172.30.160.1,172.23.144.1
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
