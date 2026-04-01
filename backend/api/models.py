@@ -1,9 +1,32 @@
 from django.db import models
+from django.conf import settings # Import settings to reference User model
+from django.contrib.auth.models import AbstractUser
 import uuid
 
-class AnalysisJob(models.Model):
-    # UUID makes our API look professional and secure
+class User(AbstractUser):
+    # Overriding the default ID with a UUID
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # You can add custom fields here later (e.g., bio, profile_pic)
+    email = models.EmailField(unique=True)
+    
+        # If you changed the username field or added required fields:
+    REQUIRED_FIELDS = ['email'] 
+
+    def __str__(self):
+        return self.username    
+
+class AnalysisJob(models.Model):
+    # UUID makes API look professional and secure
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Link to user. CASCADE means if user is deleted, their jobs are too.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='jobs',
+        blank=True
+    )
     
     # File details
     file_name = models.CharField(max_length=255)
@@ -31,3 +54,8 @@ class AnalysisJob(models.Model):
     class Meta:
         db_table = 'analysis_jobs'
         ordering = ['-created_at']
+        
+
+
+
+    

@@ -145,7 +145,7 @@ def run_pipeline(job_id):
                 "x": top_6, "y": top_6
             }
 
-        # 6. LEAN LLM PAYLOAD (Version 2 Style)
+        # 6. LLM PAYLOAD 
         llm_payload = sanitize_for_json({
             "file_metadata": eda_results["metadata"],
             "statistical_summary": numeric_df.describe().to_dict(),
@@ -158,27 +158,44 @@ def run_pipeline(job_id):
             if not ai_resp: raise ValueError("Empty AI response")
             ml_insights['ai_observations'] = ai_resp
         except Exception:
-            # Rule-based fallback — context-aware
-            missing_count = sum(eda_results["metadata"]["missing_values"].values())
-            outliers_count = sum(eda_results["outliers"].values())
-            health = eda_results["metadata"]["health_score"]
-            summary = f"Dataset contains {total_rows} rows and {eda_results['metadata']['total_cols']} features. "
-            summary += "Data quality is excellent." if health > 90 else f"Data requires attention: {missing_count} missing cells and {outliers_count} anomalies detected."
+            # ---  RULE-BASED FALLBACK ENGINE ---
+            meta = eda_results.get("metadata", {})
+            outliers_count = sum(eda_results.get("outliers", {}).values())
+            missing_count = sum(meta.get("missing_values", {}).values())
+            health = meta.get("health_score", 100)
+            
+            # 1. Context-Aware Summary
+            summary = f"Dataset Analysis complete for {meta.get('file_name')}. "
+            if health > 90:
+                summary += "The data quality is excellent, showing high integrity across all primary features."
+            else:
+                summary += f"Data requires preprocessing due to {missing_count} missing values and {outliers_count} statistical anomalies detected."
+
+            # 2. Structured Feature Suggestions (Title: Description Format)
+            # These are designed to match the UI's expectation of 3 strings.
+            suggestions = [
+                "Interaction terms: Create product features between top influential variables to capture non-linear relationships.",
+                "Z-Score Normalization: Standardize high-variance columns to improve the convergence of distance-based ML models.",
+            ]
+            
+            # Add a context-specific third suggestion
+            if missing_count > 0:
+                suggestions.append("Missingness Indicators: Binary flags for rows with null values to help the model learn patterns in missing data.")
+            else:
+                suggestions.append("Polynomial Features: Squaring numeric columns to account for potential curved trends in the dataset.")
+
+            # 3. Final Fallback Object
             ml_insights['ai_observations'] = {
                 "summary": summary,
                 "hypotheses": [
                     "How does the distribution of top features impact overall variance?",
                     "Is there a significant correlation between high-outlier columns?"
                 ],
-                "cleaning_tips": "Prioritize imputing missing values in key columns." + (
-                    " Apply Z-score capping for detected outliers." if outliers_count > 0 else ""
+                "cleaning_tips": "Prioritize imputing missing values in key columns. " + (
+                    "Apply Z-score capping to handle detected statistical outliers." if outliers_count > 0 else ""
                 ),
-                "feature_suggestions": [
-               "Standardized interaction terms between top variance features",
-               "Time-series lag features (if temporal columns exist)",
-               "Normalized ratio of missing-to-populated values per row"
-               ],
-                "is_fallback": True
+                "feature_suggestions": suggestions,
+                "is_fallback": True 
             }
 
         # 7. Final Save
