@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useJobStatus } from "../hooks/useJobStatus";
+import { useRouter } from 'next/navigation';
 import PlotlyChart from '../components/PlotlyChart';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
@@ -46,6 +47,69 @@ function DistributionChart({ data, title }) {
   );
 }
 
+const getCleanFileName = (fullName) => {
+  if (!fullName) return "provided dataset";
+  
+  // 1. Remove the file extension (.csv)
+  let name = fullName.split('.').slice(0, -1).join('.');
+  
+  // 2. Remove common Django/Random suffixes (e.g., _abc123 or _1)
+  // This regex looks for an underscore followed by alphanumeric characters at the end
+  name = name.replace(/_[a-zA-Z0-9]+$/, ''); 
+  
+  return name;
+};
+
+const getAuthToken = async () => {
+  if (typeof window === 'undefined') return null;
+
+  let accessToken = localStorage.getItem('access_token');
+  const refreshToken = localStorage.getItem('refresh_token');
+
+  if (!accessToken) return null;
+
+  // 1. Helper to check if token is expired (JWTs are Base64 encoded)
+  const isExpired = (token) => {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      // Date.now() is in ms, payload.exp is in seconds
+      return payload.exp * 1000 < Date.now();
+    } catch (e) {
+      return true;
+    }
+  };
+
+  // 2. If valid, just return it
+  if (!isExpired(accessToken)) {
+    return accessToken;
+  }
+
+  // 3. If expired, try to refresh
+  console.log("Access token expired. Attempting silent refresh...");
+  try {
+    const response = await fetch('http://127.0.0.1:8000/api/auth/refresh/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: refreshToken }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem('access_token', data.access);
+      console.log("Token refreshed successfully.");
+      return data.access;
+    } else {
+      // Refresh token is also expired or invalid
+      throw new Error("Session expired");
+    }
+  } catch (error) {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    window.location.href = '/login'; // Force a hard redirect
+    return null;
+  }
+};
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -54,20 +118,47 @@ export default function Home() {
   const [currentJobId, setCurrentJobId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedRow, setExpandedRow] = useState(null);
-
+  // 1. Internal loading state to prevent UI flicker - Local loading State
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [distChartType, setDistChartType] = useState('violin');
+  const [history, setHistory] = useState([]);
+const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const { status: jobStatus, results, error: jobError } = useJobStatus(currentJobId);
+  const router = useRouter();
+ 
+  const handleLogout = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  router.push('/login');
+ };
 
   const handleUpload = async () => {
     if (!file) return alert("Please select a CSV file first!");
     setIsUploading(true);
+    const token = await getAuthToken(); 
     const formData = new FormData();
     formData.append("file", file);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/jobs/", {
         method: "POST",
+          headers: {
+        // 2. Add the Bearer Token to headers
+        'Authorization': `Bearer ${token}`,
+        // Note: Do NOT set 'Content-Type': 'multipart/form-data' manually, 
+        // the browser does it automatically with the correct boundary for FormData.
+      },
         body: formData,
       });
+      
+       if (response.status === 401) {
+       // Handle expired token / unauthorized
+       console.error("Session expired. Please log in again.");
+       localStorage.removeItem('access_token'); // Clear stale token
+       router.push('/login'); // Force re-login
+       return;
+       }
+
       if (response.ok) {
         const data = await response.json();
         setCurrentJobId(data.id);
@@ -81,6 +172,53 @@ export default function Home() {
       setIsUploading(false);
     }
   };
+  
+  const fetchHistory = async () => {
+  setIsHistoryLoading(true);
+  const token = await getAuthToken();
+  try {
+    const response = await fetch("http://127.0.0.1:8000/api/jobs/", {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setHistory(data);
+    }
+  } catch (error) {
+    console.error("Error fetching history:", error);
+  } finally {
+    setIsHistoryLoading(false);
+  }
+};
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      router.push('/login');
+    }else {
+      // 2. ONLY set authorized to true if the token actually exists
+      setIsAuthorized(true);
+    }
+  }, [router]);
+
+
+
+
+// 3. Trigger fetch when workspaceMode changes to 'history'
+useEffect(() => {
+  if (workspaceMode === 'history') {
+    fetchHistory();
+  }
+}, [workspaceMode]);
+  
+  if (!isAuthorized) {
+    return (<div className="h-screen w-screen bg-zinc-50 flex items-center justify-center">
+             <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+           </div>);
+  }
+
 
   return (
     <div className="flex h-screen bg-zinc-50 font-sans text-zinc-900 selection:bg-blue-100 overflow-hidden">
@@ -155,6 +293,26 @@ export default function Home() {
             ))}
           </div>
         </nav>
+         <div className="p-4 border-t border-zinc-100 bg-zinc-50/50">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center px-3 py-3 text-sm font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all group"
+          >
+            <span className="mr-3 text-lg group-hover:scale-110 transition-transform">⏻</span>
+             Sign Out
+          </button>
+          
+          <div className="mt-4 px-3 flex items-center gap-3">
+             <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold">
+               {/* Just a visual placeholder for the user avatar */}
+               BM
+             </div>
+             <div className="min-w-0 flex-1">
+               <p className="text-[10px] font-black text-zinc-800 truncate uppercase tracking-tighter">Active Session</p>
+               <p className="text-[9px] text-zinc-400 truncate">AutoEDA v1.0</p>
+             </div>
+          </div>
+        </div>
       </aside>
 
       {/* ===================== MAIN WORKSPACE ===================== */}
@@ -328,17 +486,13 @@ export default function Home() {
                        )}
                      </div>
 
-               {/* Dataset Label */}
-             <div className="mb-2 flex items-center gap-2">
-               <span className="h-1 w-1 rounded-full bg-blue-400"></span>
-               <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-tight">
-             Analysis for: {results?.metadata?.file_name || "Unknown Dataset"}
-           </p>
-        </div>
-
-      {/* Main Summary Hero Text */}
-        <p className="text-lg md:text-2xl text-zinc-800 font-medium leading-relaxed italic">
-          "{results?.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}"
+               {/* Dataset Label & AI summary card*/}
+              <p className="text-md md:text-xl text-zinc-800 font-medium leading-relaxed italic">
+                  Analysis of the{" "}
+          <span className="italic font-medium text-zinc-800">
+            {getCleanFileName(results?.metadata?.file_name) || "provided dataset"}
+            </span>{" "}
+             reveals that, {results?.ml_insights?.ai_observations?.summary || "Summary generation in progress..."}
       </p>
     </div>
 
@@ -677,45 +831,87 @@ export default function Home() {
   </div>
 )}
 
-                      {/* -------- TAB: DISTRIBUTION -------- */}
-                      {activeTab === 'distribution' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-8">
-                          <div>
-                            <h3 className="text-lg font-bold text-zinc-900">Feature Distributions</h3>
-                            <p className="text-xs text-zinc-500">Univariate density and statistical spread (Kernel Density Estimation)</p>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {Object.entries(results?.ml_insights?.distribution_analysis || {}).map(([col, data]) => (
-                              <div key={col} className="p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-xl hover:scale-[1.01] transition-all duration-300 group">
-                                <div className="flex justify-between items-start mb-4">
-                                  <h4 className="font-bold text-zinc-800 group-hover:text-blue-600 transition-colors">{col}</h4>
-                                  <span className="text-[9px] bg-purple-50 text-purple-600 px-2 py-1 rounded-full font-bold uppercase tracking-tighter">
-                                    Statistical Density
-                                  </span>
-                                </div>
-                                <div className="h-72 w-full">
-                                  <PlotlyChart
-                                    data={[{
-                                      type: 'violin',
-                                      y: data.raw_sample,
-                                      points: 'none',
-                                      box: { visible: true },
-                                      line: { color: '#3b82f6' },
-                                      fillcolor: 'rgba(59, 130, 246, 0.15)',
-                                      meanline: { visible: true, color: '#1d4ed8' },
-                                      bandwidth: 0.5
-                                    }]}
-                                    layout={{
-                                      autosize: true,
-                                      margin: { t: 10, b: 30, l: 40, r: 10 },
-                                      yaxis: { zeroline: false, gridcolor: '#f1f5f9' },
-                                      xaxis: { showgrid: false },
-                                      
-                                    }}
-                                    useResizeHandler={true}
-                                    className="w-full h-full"
-                                  />
-                                </div>
+                  {activeTab === 'distribution' && (
+               <div className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-8">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div>
+               <h3 className="text-lg font-bold text-zinc-900">Feature Distributions</h3>
+               <p className="text-xs text-zinc-500">Univariate statistical spread and density estimation</p>
+                 </div>
+
+      {/* --- NEW DROPDOWN --- */}
+      <div className="relative inline-block">
+        <select 
+          value={distChartType}
+          onChange={(e) => setDistChartType(e.target.value)}
+          className="appearance-none bg-white border border-zinc-200 text-zinc-700 text-[11px] font-bold py-2 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm hover:border-zinc-300 transition-all"
+        >
+          <option value="violin">Violin Plot</option>
+          <option value="histogram">Histogram</option>
+          <option value="box">Box Plot</option>
+          <option value="strip">Strip Plot</option>
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-zinc-400">
+          <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {Object.entries(results?.ml_insights?.distribution_analysis || {}).map(([col, data]) => (
+        <div key={col} className="p-6 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 group">
+          <div className="flex justify-between items-start mb-4">
+            <h4 className="font-bold text-zinc-800 group-hover:text-blue-600 transition-colors">{col}</h4>
+            <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold uppercase tracking-tighter">
+              {distChartType.replace('_', ' ')}
+            </span>
+          </div>
+
+          <div className="h-72 w-full">
+            <PlotlyChart
+              data={[
+                distChartType === 'violin' ? {
+                  type: 'violin',
+                  y: data.raw_sample,
+                  box: { visible: true },
+                  line: { color: '#3b82f6' },
+                  fillcolor: 'rgba(59, 130, 246, 0.1)',
+                  meanline: { visible: true }
+                } : distChartType === 'histogram' ? {
+                  type: 'histogram',
+                  x: data.raw_sample,
+                  marker: { color: '#3b82f6', line: { color: 'white', width: 0.5 } },
+                  opacity: 0.7
+                } : distChartType === 'box' ? {
+                  type: 'box',
+                  y: data.raw_sample,
+                  marker: { color: '#8b5cf6' },
+                  boxpoints: 'outliers'
+                } : { // Strip Plot
+                  type: 'box',
+                  y: data.raw_sample,
+                  mode: 'markers',
+                  boxpoints: 'all',
+                  jitter: 0.5,
+                  pointpos: 0,
+                  fillcolor: 'rgba(255,255,255,0)',
+                  line: { color: 'rgba(255,255,255,0)' },
+                  marker: { color: '#3b82f6', size: 4, opacity: 0.4 }
+                }
+              ]}
+              layout={{
+                autosize: true,
+                margin: { t: 10, b: 30, l: 40, r: 10 },
+                yaxis: { zeroline: false, gridcolor: '#f1f5f9' },
+                xaxis: { showgrid: false },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+              }}
+              useResizeHandler={true}
+              className="w-full h-full"
+            />
+          </div>
+
                                 <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-zinc-50">
                                   <div className="text-center">
                                     <p className="text-[8px] text-zinc-400 uppercase font-bold">Min</p>
@@ -812,18 +1008,15 @@ export default function Home() {
     </div>
 
     {/* 3. NEW: FEATURE SUGGESTION CARD (ENGINEERING) */}
-    <div className="p-8 bg-zinc-900 rounded-[2.5rem] shadow-2xl shadow-blue-900/10 border border-zinc-800">
+    <div className="p-8 bg-emerald-50 border border-emerald-100 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <span className="px-2 py-1 bg-zinc-800 text-zinc-400 text-[10px] font-black rounded uppercase tracking-widest border border-zinc-700">
-            Semantic Expansion
+          <span className="px-2 py-1 bg-emerald-100 text-emerald-600 text-[10px] font-black rounded uppercase tracking-widest border border-emerald-100">
+            Feature Engineering
           </span>
-          <h3 className="text-xl font-bold text-white mt-2">Engineered Feature Suggestions</h3>
+          <h3 className="text-sm font-bold text-emerald-900 mt-2">Engineered Feature Suggestions</h3>
         </div>
-        <div className="hidden md:block h-px flex-1 bg-zinc-800 mx-8"></div>
-        <span className="text-[10px] font-mono text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
-          GEN-AI POWERED
-        </span>
+        
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -837,15 +1030,15 @@ export default function Home() {
       ? s.description 
       : "";
         return (
-          <div key={i} className="p-6 bg-zinc-800/40 border border-zinc-700/50 rounded-2xl group hover:border-blue-500/50 transition-all cursor-default">
-            <div className="h-8 w-8 bg-zinc-800 text-blue-400 rounded-lg flex items-center justify-center mb-4 text-xs font-black shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors">
+          <div key={i} className="flex flex-col p-5 md:p-6 bg-white border border-emerald-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group cursor-default overflow-hidden">
+            <div className="h-7 w-7 shrink-0 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center mb-3 text-xs font-black group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
               0{i + 1}
             </div>
-            <p className="text-sm text-zinc-100 font-bold leading-tight mb-2">
+            <p className="text-sm text-zinc-800 font-bold leading-snug mb-1.5 group-hover:text-emerald-700 transition-colors break-words">
               {suggestionTitle}
             </p>
              {suggestionDesc && (
-          <p className="text-xs text-zinc-400 leading-relaxed">
+          <p className="text-xs text-zinc-500 leading-relaxed italic  break-words mt-auto pt-1">
             {suggestionDesc}
           </p>
              )}
@@ -879,10 +1072,78 @@ export default function Home() {
 
           ) : (
             /* HISTORY MODE */
-            <div className="py-20 text-center animate-in zoom-in-95 duration-500">
-              <div className="h-16 w-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">🕒</div>
-              <h3 className="text-xl font-bold text-zinc-300 uppercase tracking-widest">History coming in Sprint 1</h3>
-            </div>
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-6">
+    <div className="flex justify-between items-center px-2">
+      <h3 className="text-xl font-bold text-zinc-900">Analysis History</h3>
+      <button 
+        onClick={fetchHistory}
+        className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:underline"
+      >
+        ↻ Refresh List
+      </button>
+    </div>
+
+    {isHistoryLoading ? (
+      <div className="py-20 text-center">
+        <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p className="text-zinc-400 text-xs mt-4 font-medium uppercase tracking-widest">Loading your records...</p>
+      </div>
+    ) : history.length > 0 ? (
+      <div className="overflow-hidden border border-zinc-200 rounded-3xl bg-white shadow-sm">
+        <table className="w-full text-left text-sm border-collapse">
+          <thead className="bg-zinc-50/50 text-zinc-500 uppercase text-[10px] font-bold border-b border-zinc-100">
+            <tr>
+              <th className="px-6 py-4">Filename</th>
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Date</th>
+              <th className="px-6 py-4 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50">
+            {history.map((job) => (
+              <tr key={job.id} className="hover:bg-zinc-50/50 transition-colors group">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">📄</span>
+                    <span className="font-bold text-zinc-800">{job.file_name}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter ${
+                    job.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' :
+                    job.status === 'FAILED' ? 'bg-red-50 text-red-600' :
+                    'bg-blue-50 text-blue-600 animate-pulse'
+                  }`}>
+                    {job.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-zinc-400 font-medium text-xs">
+                  {new Date(job.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <button 
+                    onClick={() => {
+                      setCurrentJobId(job.id);
+                      setWorkspaceMode('current');
+                    }}
+                    className="px-3 py-1.5 bg-zinc-900 text-white text-[10px] font-bold rounded-lg hover:bg-blue-600 transition-all active:scale-95"
+                  >
+                    View Results
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div className="py-32 text-center border-2 border-dashed border-zinc-200 rounded-3xl bg-white">
+        <div className="h-16 w-16 bg-zinc-100 text-zinc-400 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">📭</div>
+        <h3 className="text-lg font-bold text-zinc-800">No History Found</h3>
+        <p className="text-zinc-500 text-xs mt-1">Upload your first CSV to see it listed here.</p>
+      </div>
+    )}
+  </div>
           )}
 
         </div>
@@ -937,3 +1198,4 @@ function HealthGauge({ score }) {
     </div>
   );
 }
+
