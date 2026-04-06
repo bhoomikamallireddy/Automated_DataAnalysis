@@ -168,5 +168,22 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
+# 1. For development: emails sending
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+# 2. Your Next.js Frontend URL (used to build the link)
+FRONTEND_URL = "http://localhost:3000"
+
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'bhoomikamallireddy@gmail.com' 
+
+# CRITICAL: This must be a 16-character App Password, NOT your login password
+EMAIL_HOST_PASSWORD = 'ultodqxauqezcofs' 
+
+DEFAULT_FROM_EMAIL = f"AutoEDA <{EMAIL_HOST_USER}>"
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
