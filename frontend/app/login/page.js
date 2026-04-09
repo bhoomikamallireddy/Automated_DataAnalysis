@@ -1,6 +1,7 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -8,6 +9,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+ useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      router.push('/');
+    }
+  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -31,7 +39,10 @@ export default function LoginPage() {
         // 2. Redirect to the main dashboard
         router.push('/'); 
       } else {
-        setError(data.detail || 'Invalid username or password');
+        const errorMessage = data.detail || 
+          (typeof data === 'object' ? Object.values(data).flat()[0] : null) || 
+          'Invalid username or password';
+        setError(errorMessage || 'Invalid username or password');
       }
     } catch (err) {
       setError('Connection to server failed. Is Django running?');
@@ -39,6 +50,12 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // While checking for the token, we return null so the form doesn't show
+  // if the user is already logged in.
+  if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
@@ -57,7 +74,10 @@ export default function LoginPage() {
               required
               className="w-full mt-2 p-4 bg-zinc-50 border border-zinc-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-zinc-800 font-medium"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) =>  {
+                setUsername(e.target.value);
+                if (error) setError(''); // Clear error when user tries again
+                                                                     }}
               placeholder="Enter your username"
             />
           </div>
@@ -75,11 +95,18 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl animate-shake">
-              {error}
-            </div>
-          )}
-
+             <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+             <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0"></div>
+             <p className="text-[11px] font-black uppercase tracking-tight">
+                 {error}
+              </p>
+             </div>
+            )}
+          <div className="flex justify-end mb-4">
+           <Link href="/forgot-password" size="sm" className="text-[10px] font-bold text-zinc-400 hover:text-blue-600 transition-colors uppercase tracking-widest">
+            Forgot Password?
+           </Link>
+           </div>
           <button
             type="submit"
             disabled={loading}
@@ -87,6 +114,9 @@ export default function LoginPage() {
           >
             {loading ? "Authenticating..." : "Sign In"}
           </button>
+          <p className="text-center text-zinc-400 text-[10px] font-bold uppercase tracking-widest mt-6">
+            New here? <Link href="/register" className="text-blue-600 hover:underline">Create Account</Link>
+          </p>
         </form>
       </div>
     </div>

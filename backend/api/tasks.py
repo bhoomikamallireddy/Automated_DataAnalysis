@@ -4,6 +4,7 @@ import numpy as np
 from .models import AnalysisJob
 from .llm_utils import get_llm_insights
 import random
+import re
 
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
@@ -11,7 +12,7 @@ from sklearn.preprocessing import StandardScaler
 
 def sanitize_for_json(obj):
     if isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
+        return {sanitize_for_json(k): sanitize_for_json(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [sanitize_for_json(i) for i in obj]
     elif isinstance(obj, np.ndarray):
@@ -22,6 +23,9 @@ def sanitize_for_json(obj):
         return int(obj)
     elif pd.isna(obj):
         return None
+    elif isinstance(obj, str):
+        # Remove null bytes and other problematic characters
+        return obj.replace('\x00', '')
     return obj
 
 def run_pipeline(job_id):
@@ -31,12 +35,57 @@ def run_pipeline(job_id):
         job.save()
 
         file_path = job.file.path
+        # --- MEMORY-SAFE FIX 1: UNICODE & EMPTY CHECK ---
+        try:
+            # We only load the first 5 rows to check if it's empty and valid
+            # This handles the "Empty File" and "Unicode BOM" tests without crashing RAM
+            df_check = pd.read_csv(file_path, encoding='utf-8-sig', nrows=5)
+            
+            if df_check.empty:
+                # Headers-only CSV is valid - we'll process it with 0 data rows
+                # Continue processing with the empty dataframe
+                df_sample = df_check
+        except pd.errors.EmptyDataError:
+            # Specifically catches 0-byte files
+            job.status = 'FAILED'
+            job.results = {"error": "The uploaded file is empty (0 bytes)."}
+            job.save()
+            return
+        except Exception as e:
+            # Catch encoding errors or corrupt files
+            job.status = 'FAILED'
+            job.results = {"error": f"Could not read file: {str(e)}"}
+            job.save()
+            return
         header_df = pd.read_csv(file_path, nrows=0)
 
-        # 1. Load Data
-        df_sample = pd.read_csv(file_path, nrows=5000)
-        total_rows = sum(1 for _ in open(file_path)) - 1
-        numeric_df = df_sample.select_dtypes(include=[np.number])
+        try:
+            # 'utf-8-sig' handles the Excel BOM, 'errors=replace' prevents crashing on corrupt symbols
+            # 'low_memory=False' prevents the "Mixed Type" warning/error for large files
+            # 1. Load Data
+            df_sample = pd.read_csv(file_path, encoding='utf-8-sig', nrows=5000, engine='python', on_bad_lines='skip')
+            # MIXED TYPE COERCION:
+            # Force columns that look like they should be numeric to actually be numeric
+            # This fixes the "Mixed Types" failure by turning invalid strings into NaN
+            for col in df_sample.columns:
+                if df_sample[col].dtype == 'object':
+                    # Attempt to convert to numeric, if it's mostly numbers
+                    converted = pd.to_numeric(df_sample[col], errors='coerce')
+                    if converted.notnull().sum() > (len(df_sample) * 0.3): # If >30% is numeric
+                        df_sample[col] = converted
+            numeric_df = df_sample.select_dtypes(include=[np.number])
+            total_rows = sum(1 for _ in open(file_path, encoding='utf-8', errors='ignore')) - 1
+
+        except UnicodeDecodeError:
+            # Fallback for old Windows-encoded files (common in many legacy datasets)
+            df_sample = pd.read_csv(file_path, encoding='latin1', nrows=5000)
+            numeric_df = df_sample.select_dtypes(include=[np.number])
+            total_rows = sum(1 for _ in open(file_path, encoding='utf-8', errors='ignore')) - 1
+        except Exception as e:
+            # Fallback for other errors - try with c engine
+            df_sample = pd.read_csv(file_path, encoding='utf-8-sig', nrows=5000, low_memory=False, on_bad_lines='skip')
+            numeric_df = df_sample.select_dtypes(include=[np.number])
+            total_rows = sum(1 for _ in open(file_path, encoding='utf-8', errors='ignore')) - 1
 
         # 2. Metadata & Quality
         null_counts = df_sample.isnull().sum()
@@ -63,7 +112,13 @@ def run_pipeline(job_id):
                 "labels": cols_with_nulls
             }
         }
-
+        total_cells = total_rows * len(header_df.columns)
+        actual_nulls = null_counts.sum()
+        
+        if total_cells > 0:
+            health_score = round(max(0, 100 - (actual_nulls / total_cells * 100)), 1)
+        else:
+            health_score = 0
         # 3. EDA Results
         eda_results = {
             "metadata": {
@@ -72,7 +127,7 @@ def run_pipeline(job_id):
                 "missing_values": null_counts.to_dict(),
                 "column_types": header_df.dtypes.astype(str).to_dict(),
                 "file_name": os.path.basename(file_path),
-                "health_score": round(max(0, 100 - (null_counts.sum() / (total_rows * len(header_df.columns)) * 100)), 1)
+                "health_score": health_score 
             },
             "univariate": {},
             "outliers": {}
@@ -97,35 +152,40 @@ def run_pipeline(job_id):
 
         # 5. ML Engine
         ml_insights = {"quality_metrics": quality_metrics}
-        if not numeric_df.empty and len(numeric_df) > 1:
+        # ---  GUARD ML AGAINST ALL-CATEGORICAL DATA --- # Only run PCA/ML if we have at least 2 numeric columns and 2 rows
+        if not numeric_df.empty and len(numeric_df.columns) >= 2 and len(numeric_df) > 1:
             imp = SimpleImputer(strategy='mean')
-            scaled = StandardScaler().fit_transform(imp.fit_transform(numeric_df))
+            # Extra safety: drop columns that are 100% null before scaling
+            ml_ready_df = numeric_df.dropna(axis=1, how='all')
+            if not ml_ready_df.empty and len(ml_ready_df.columns) >= 2:
+              scaled = StandardScaler().fit_transform(imp.fit_transform(ml_ready_df))
 
-            pca = PCA(n_components=2)
-            ml_insights['pca_data'] = pca.fit_transform(scaled)[:500]
+              pca = PCA(n_components=min(2, len(ml_ready_df.columns)))
+              ml_insights['pca_data'] = pca.fit_transform(scaled)[:500]
 
-            loadings = np.sqrt(np.sum(pca.components_**2, axis=0))
-            influence = dict(sorted(zip(numeric_df.columns, loadings), key=lambda x: x[1], reverse=True)[:10])
-            ml_insights['feature_influence'] = influence
+              loadings = np.sqrt(np.sum(pca.components_**2, axis=0))
+              influence = dict(sorted(zip(ml_ready_df.columns, loadings), key=lambda x: x[1], reverse=True)[:10])
+              ml_insights['feature_influence'] = influence
 
-            top_6 = list(influence.keys())[:6]
+              top_6 = list(influence.keys())[:6]
             
-            # Distribution samples
-            dist_analysis = {}
-            for col in top_6:
+              # Distribution samples
+              dist_analysis = {}
+              for col in top_6:
                 raw_vals = numeric_df[col].dropna().tolist()
                 dist_analysis[col] = {
                     "raw_sample": random.sample(raw_vals, min(500, len(raw_vals))),
                     "stats": eda_results["univariate"].get(col, {}).get("stats", {})
                 }
-            ml_insights["distribution_analysis"] = dist_analysis
+              ml_insights["distribution_analysis"] = dist_analysis
 
-            # Bivariate gallery
-            gallery = []
-            for i in range(len(top_6)):
-                for j in range(i + 1, len(top_6)):
+             # Bivariate gallery
+              gallery = []
+              if len(top_6) >= 2:
+               for i in range(len(top_6)):
+                 for j in range(i + 1, len(top_6)):
                     cx, cy = top_6[i], top_6[j]
-                    pdf = numeric_df[[cx, cy]].dropna()
+                    pdf = ml_ready_df[[cx, cy]].dropna()
                     if len(pdf) > 5:
                         s = pdf.sample(n=min(300, len(pdf)))
                         if s[cx].nunique() > 1:
@@ -139,16 +199,29 @@ def run_pipeline(job_id):
                                     "y": [float(m * s[cx].min() + b), float(m * s[cx].max() + b)]
                                 }
                             })
-            ml_insights["bivariate_gallery"] = gallery
-            ml_insights["influential_correlations"] = {
+               ml_insights["bivariate_gallery"] = gallery
+               ml_insights["influential_correlations"] = {
                 "z": numeric_df[top_6].corr().fillna(0).values,
                 "x": top_6, "y": top_6
-            }
+               }
+            else:
+            # Fallbacks for All-Categorical or Single-Column data
+               ml_insights.update({
+                'pca_data': [],
+                'feature_influence': {},
+                'distribution_analysis': {},
+                'bivariate_gallery': [],
+                'influential_correlations': {"z": [], "x": [], "y": []}
+              })
+
+           
+                  
 
         # 6. LLM PAYLOAD 
+        stats_dict = numeric_df.describe().to_dict() if not numeric_df.empty else {"info": "No numeric data"}
         llm_payload = sanitize_for_json({
             "file_metadata": eda_results["metadata"],
-            "statistical_summary": numeric_df.describe().to_dict(),
+            "statistical_summary": stats_dict ,
             "top_features": ml_insights.get('feature_influence', {}),
             "outliers": eda_results["outliers"]
         })

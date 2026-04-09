@@ -125,7 +125,46 @@ export default function Home() {
 const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const { status: jobStatus, results, error: jobError } = useJobStatus(currentJobId);
   const router = useRouter();
- 
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      router.push('/login');
+    }else {
+      // 2. ONLY set authorized to true if the token actually exists
+      setIsAuthorized(true);
+    }
+  }, [router]);
+
+  // 1. HYDRATION: When the app first loads, check for an existing job
+useEffect(() => {
+  const savedJobId = localStorage.getItem('last_active_job_id');
+  if (savedJobId && isAuthorized) {
+    setCurrentJobId(savedJobId);
+    // Optionally, if you have a job saved, default to 'current' workspace
+    setWorkspaceMode('current');
+  }
+}, [isAuthorized]);
+
+// 3. Trigger fetch when workspaceMode changes to 'history'
+useEffect(() => {
+  if (workspaceMode === 'history' && isAuthorized) {
+    fetchHistory();
+  }
+}, [workspaceMode]);
+
+// Auto-refresh history every 10 seconds ONLY if we are looking at it
+useEffect(() => {
+  let interval;
+  if (workspaceMode === 'history') {
+    interval = setInterval(() => {
+      fetchHistory();
+    }, 10000); // 10 seconds is plenty for a history list
+  }
+  return () => clearInterval(interval);
+}, [workspaceMode]);
+
+
   const handleLogout = () => {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
@@ -161,8 +200,12 @@ const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
       if (response.ok) {
         const data = await response.json();
+        // SAVE TO LOCAL STORAGE HERE
+        localStorage.setItem('last_active_job_id', data.id);
         setCurrentJobId(data.id);
         setFile(null);
+        // Reset the physical input so the same file can be selected again
+        document.getElementById('csv-upload').value = "";
       } else {
         alert("Upload failed. Please check the Django server.");
       }
@@ -172,6 +215,14 @@ const [isHistoryLoading, setIsHistoryLoading] = useState(false);
       setIsUploading(false);
     }
   };
+
+  // 3. CLEANUP: Update your "New Analysis" button to clear the storage
+const startNewAnalysis = () => {
+  setCurrentJobId(null);
+  setFile(null);
+  localStorage.removeItem('last_active_job_id');
+};
+
   
   const fetchHistory = async () => {
   setIsHistoryLoading(true);
@@ -192,33 +243,12 @@ const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     setIsHistoryLoading(false);
   }
 };
-
-  useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      router.push('/login');
-    }else {
-      // 2. ONLY set authorized to true if the token actually exists
-      setIsAuthorized(true);
-    }
-  }, [router]);
-
-
-
-
-// 3. Trigger fetch when workspaceMode changes to 'history'
-useEffect(() => {
-  if (workspaceMode === 'history') {
-    fetchHistory();
-  }
-}, [workspaceMode]);
   
   if (!isAuthorized) {
     return (<div className="h-screen w-screen bg-zinc-50 flex items-center justify-center">
              <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
            </div>);
   }
-
 
   return (
     <div className="flex h-screen bg-zinc-50 font-sans text-zinc-900 selection:bg-blue-100 overflow-hidden">
@@ -305,7 +335,7 @@ useEffect(() => {
           <div className="mt-4 px-3 flex items-center gap-3">
              <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold">
                {/* Just a visual placeholder for the user avatar */}
-               BM
+               👤
              </div>
              <div className="min-w-0 flex-1">
                <p className="text-[10px] font-black text-zinc-800 truncate uppercase tracking-tighter">Active Session</p>
@@ -361,7 +391,14 @@ useEffect(() => {
           <div className="flex items-center gap-1.5 md:gap-3 min-w-0">
             <input
               type="file" id="csv-upload" hidden accept=".csv"
-              onChange={(e) => setFile(e.target.files[0])}
+              onChange={(e) => {
+              const selectedFile = e.target.files[0];
+              if (selectedFile) {
+               setFile(selectedFile); }
+               // CRITICAL FIX: Reset the input value so selecting the same file 
+              // again later triggers the onChange event.
+                e.target.value = ""; 
+                }}
             />
             <label
               htmlFor="csv-upload"
@@ -371,13 +408,13 @@ useEffect(() => {
             </label>
             <button
               onClick={handleUpload}
-              disabled={isUploading || (currentJobId && jobStatus !== 'COMPLETED' && jobStatus !== 'FAILED')}
+              disabled={ !file || isUploading || (currentJobId && jobStatus !== 'COMPLETED' && jobStatus !== 'FAILED')}
               className="px-3 py-1.5 text-[10px] font-bold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-zinc-300 transition-all active:scale-95 shrink-0"
             >
               {isUploading ? "Uploading..." : "Run Analysis"}
             </button>
             <button
-              onClick={() => { setCurrentJobId(null); setFile(null); }}
+              onClick={startNewAnalysis}
               className="hidden md:block text-[10px] font-bold text-zinc-400 hover:text-blue-600 transition-colors uppercase tracking-widest active:scale-95"
             >
               ↻ New

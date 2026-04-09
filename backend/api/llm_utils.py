@@ -1,9 +1,11 @@
 import json
 import os
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai 
 from google.genai import types
+from google.api_core import exceptions
 
 # Ensure environment variables are loaded
 
@@ -12,7 +14,7 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # 2. Load the file
 
-def get_llm_insights(analysis_results):
+def get_llm_insights(analysis_results, max_retries=3):
     """
     Uses Gemini AI to generate high-level data strategy and executive summaries
     based on the JSON results from the EDA and ML engines.
@@ -36,7 +38,7 @@ def get_llm_insights(analysis_results):
         Analyze the metadata, influential features, and missing values. 
         Return a JSON object with exactly these keys:
         - "summary": A professional 3-sentence non-technical overview of the data patterns.
-        - "cleaning_tips": Actionable strategies for any missing values or outliers found.
+        - "cleaning_tips": Acnotionable strategies for any missing values or outliers found.
         - "feature_suggestions": Exactly 3 items. Each item MUST be a single string formatted as 'Title: Brief Description'. Do NOT use nested objects.
         - "hypotheses": 2 deep business questions the user should investigate based on these stats.
         """

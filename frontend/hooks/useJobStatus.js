@@ -72,9 +72,7 @@ export const useJobStatus = (jobId) => {
       if (!token) return; // Stop if user was kicked to login
       try {
        const response = await fetch(`http://127.0.0.1:8000/api/jobs/${jobId}/`, {
-       headers: {
-      'Authorization': `Bearer ${token}`,
-       }
+       headers: {'Authorization': `Bearer ${token}`,}
        });
         if (response.status === 401) {
           clearInterval(pollInterval);
@@ -97,10 +95,14 @@ export const useJobStatus = (jobId) => {
         // If the backend says it failed, stop and show the error
         else if (data.status === 'FAILED') {
           setError(data.results?.error || 'Analysis failed');
+          localStorage.removeItem('last_active_job_id')
           clearInterval(pollInterval);
         }
       } catch (err) {
         setError(err.message || 'Connection to server lost');
+           // Be careful here: if it's just a 500 error from the server during reload, 
+    // we don't necessarily want to kill the interval immediately.
+    console.error("Polling error:", err);
         clearInterval(pollInterval);
       }
     };
