@@ -6,18 +6,16 @@ import uuid
 class User(AbstractUser):
     # Overriding the default ID with a UUID
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # You can add custom fields here later (e.g., bio, profile_pic)
+
     email = models.EmailField(unique=True)
     
-        # If you changed the username field or added required fields:
     REQUIRED_FIELDS = ['email'] 
 
     def __str__(self):
         return self.username    
 
 class AnalysisJob(models.Model):
-    # UUID makes API look professional and secure
+   
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Link to user. CASCADE means if user is deleted, their jobs are too.

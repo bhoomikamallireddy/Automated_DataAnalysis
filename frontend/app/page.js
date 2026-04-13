@@ -393,8 +393,7 @@ const startNewAnalysis = () => {
               type="file" id="csv-upload" hidden accept=".csv"
               onChange={(e) => {
               const selectedFile = e.target.files[0];
-              if (selectedFile) {
-               setFile(selectedFile); }
+              if (selectedFile) setFile(selectedFile);
                // CRITICAL FIX: Reset the input value so selecting the same file 
               // again later triggers the onChange event.
                 e.target.value = ""; 

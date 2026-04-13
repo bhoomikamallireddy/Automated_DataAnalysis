@@ -1,10 +1,11 @@
 import os
 import pandas as pd
 import numpy as np
+import random
 from .models import AnalysisJob
 from .llm_utils import get_llm_insights
-import random
-import re
+
+
 
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
@@ -230,41 +231,49 @@ def run_pipeline(job_id):
             ai_resp = get_llm_insights(llm_payload)
             if not ai_resp: raise ValueError("Empty AI response")
             ml_insights['ai_observations'] = ai_resp
-        except Exception:
+            ml_insights['ai_observations']['is_fallback'] = False
+        except Exception as e:
             # ---  RULE-BASED FALLBACK ENGINE ---
+            print(f"🔄 LLM Waterfall Failed: {e}. Triggering System Fallback...")
             meta = eda_results.get("metadata", {})
             outliers_count = sum(eda_results.get("outliers", {}).values())
             missing_count = sum(meta.get("missing_values", {}).values())
             health = meta.get("health_score", 100)
             
             # 1. Context-Aware Summary
-            summary = f"Dataset Analysis complete for {meta.get('file_name')}. "
+            summary = f",Dataset Analysis complete for {meta.get('file_name')}. "
             if health > 90:
-                summary += "The data quality is excellent, showing high integrity across all primary features."
+                summary += "The data quality is excellent, showing high integrity across all primary features with minimal missing entries."
+            elif health > 80:
+                summary += "The data quality is robust, though minor cleaning of sparse columns is recommended."
             else:
-                summary += f"Data requires preprocessing due to {missing_count} missing values and {outliers_count} statistical anomalies detected."
+                summary += f"Critical quality issues detected:Data requires preprocessing due to {missing_count} missing values and {outliers_count} statistical anomalies detected.Missing cells require immediate imputation"
 
             # 2. Structured Feature Suggestions (Title: Description Format)
             # These are designed to match the UI's expectation of 3 strings.
             suggestions = [
                 "Interaction terms: Create product features between top influential variables to capture non-linear relationships.",
-                "Z-Score Normalization: Standardize high-variance columns to improve the convergence of distance-based ML models.",
+                "Temporal Scaling: If time-series data exists, normalize intervals to capture seasonal drift.",
+                "Z-Score Normalization: Standardize high-variance columns to improve the convergence of distance-based ML models.Apply winsorization to the top 3 high-outlier columns to stabilize variance",
             ]
             
             # Add a context-specific third suggestion
             if missing_count > 0:
                 suggestions.append("Missingness Indicators: Binary flags for rows with null values to help the model learn patterns in missing data.")
             else:
-                suggestions.append("Polynomial Features: Squaring numeric columns to account for potential curved trends in the dataset.")
+                suggestions.append("Non-Linear Mapping: Use polynomial expansion on influential numeric features to improve model fit. Squaring numeric columns to account for potential curved trends in the dataset.")
 
             # 3. Final Fallback Object
             ml_insights['ai_observations'] = {
                 "summary": summary,
                 "hypotheses": [
                     "How does the distribution of top features impact overall variance?",
-                    "Is there a significant correlation between high-outlier columns?"
+                    "Is there a significant correlation between high-outlier columns?",
+                     "How does the variance in your top features drive your primary target variable?",
+                    f"Would removing the {outliers_count} detected outliers significantly shift your mean trends?"
+
                 ],
-                "cleaning_tips": "Prioritize imputing missing values in key columns. " + (
+                "cleaning_tips": f"Focus on the {len(meta.get('missing_values', {}))} columns with gaps. Use 'Mean Imputation' for numeric and 'Mode' for categories.Prioritize imputing missing values in key columns. " + (
                     "Apply Z-score capping to handle detected statistical outliers." if outliers_count > 0 else ""
                 ),
                 "feature_suggestions": suggestions,

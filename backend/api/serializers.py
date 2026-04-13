@@ -20,8 +20,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         return user
     def validate(self, data):
-        # Note: You'd need to include confirmPassword in your fields 
-        # or handle it via the request context if you want to validate matching on backend.
+        # Note: I'd include confirmPassword in fields 
+       
         return data
 
 class AnalysisJobSerializer(serializers.ModelSerializer):
