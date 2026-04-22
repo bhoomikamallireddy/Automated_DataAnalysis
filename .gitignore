@@ -4,6 +4,7 @@ env/
 ENV/
 backend/media/uploads/
 backend/media/
+backend/.env
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,7 +12,7 @@ __pycache__/
 .env
  *.env
 db.sqlite3
-
+frontend/.env.local
 
 # --- Node.js / Next.js ---
 node_modules/
@@ -36,3 +37,6 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+
+
+

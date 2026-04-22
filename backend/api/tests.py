@@ -1316,7 +1316,10 @@ class PasswordResetTests(APITestCase):
         mock_send_mail.side_effect = Exception('SMTP error')
         data = {'email': 'reset@example.com'}
         with self.assertRaises(Exception):
-            self.client.post(self.reset_request_url, data, format='json')
+            response = self.client.post(self.reset_request_url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE,1)
+            self.assertIn('detail', response.data)
+            self.assertIn('unavailable', response.data['detail'].lower())
 
     def test_password_reset_missing_email_field(self):
         """Test password reset with missing email returns 200 (email harvesting prevention)"""

@@ -10,9 +10,11 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
+import sys
 import os
+from pathlib import Path
 from datetime import timedelta
+from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,12 +24,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$cz6=p=&3r)x^ztz9+eo$f29#sa-+&hc9mga6xerzw4z^#*#=4'
+SECRET_KEY = config('SECRET_KEY')
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=Csv())
+
 
 
 # Application definition
@@ -55,7 +59,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-CORS_ALLOW_ALL_ORIGINS = True 
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', cast=Csv())
 
 ROOT_URLCONF = 'core.urls'
 
@@ -83,11 +88,11 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'auto_dashboard_db',
-        'USER': 'postgres',
-        'PASSWORD': 'bhoomika*26', 
-        'HOST': '192.168.240.1',
-        'PORT': '5432',
+        'NAME': config('DB_NAME', default='auto_dashboard_db'),
+        'USER': config('DB_USER', default='postgres'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST', default='127.0.0.1'),
+        'PORT': config('DB_PORT', default='5432'),
     }
 }
 #172.23.144.1 
@@ -172,15 +177,15 @@ SIMPLE_JWT = {
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
 # 2. Your Next.js Frontend URL (used to build the link)
-FRONTEND_URL = "http://localhost:3000"
+FRONTEND_URL = config('FRONTEND_URL', default="http://localhost:3000")
 
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'bhoomikamallireddy@gmail.com' 
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 
 # CRITICAL: This must be a 16-character App Password, NOT your login password
-EMAIL_HOST_PASSWORD = 'ultodqxauqezcofs' 
+EMAIL_HOST_PASSWORD =  config('EMAIL_HOST_PASSWORD')
 
 DEFAULT_FROM_EMAIL = f"AutoEDA <{EMAIL_HOST_USER}>"
 
@@ -217,3 +222,39 @@ if 'test' in sys.argv or 'PYTEST_CURRENT_TEST' in os.environ:
         MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
     if 'django.contrib.sessions.middleware.SessionMiddleware' not in MIDDLEWARE:
         MIDDLEWARE.insert(1, 'django.contrib.sessions.middleware.SessionMiddleware')
+        
+# --- LOGGING CONFIGURATION ---
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # This catches logs from your 'api' app
+        'api': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+        

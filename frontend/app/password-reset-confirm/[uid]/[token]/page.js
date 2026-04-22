@@ -1,14 +1,15 @@
 "use client";
-import { useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
+import { useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 export default function PasswordResetConfirmPage() {
   const { uid, token } = useParams(); // Automatically grabs [uid] and [token] from the URL
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const router = useRouter();
 
@@ -20,26 +21,31 @@ export default function PasswordResetConfirmPage() {
     }
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       // Note: You will need a matching endpoint in Django for this (Step 2 below)
-      const response = await fetch('http://127.0.0.1:8000/api/auth/password-reset-confirm/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid,
-          token,
-          new_password: newPassword
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}/api/auth/password-reset-confirm/`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            uid,
+            token,
+            new_password: newPassword,
+          }),
+        },
+      );
 
       if (response.ok) {
         setSuccess(true);
-        setTimeout(() => router.push('/login'), 3000);
+        setTimeout(() => router.push("/login"), 3000);
       } else {
         const data = await response.json();
-        setError(data.detail || "Link expired or invalid. Please request a new one.");
+        setError(
+          data.detail || "Link expired or invalid. Please request a new one.",
+        );
       }
     } catch (err) {
       setError("Connection failed. Check your internet.");
@@ -52,20 +58,30 @@ export default function PasswordResetConfirmPage() {
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-[2.5rem] border border-zinc-200 shadow-xl p-10">
         <div className="mb-8">
-          <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">Security</span>
-          <h1 className="text-3xl font-bold text-zinc-900 mt-2">New Password</h1>
-          <p className="text-zinc-500 text-sm mt-2 font-medium">Please enter your new secure password below.</p>
+          <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">
+            Security
+          </span>
+          <h1 className="text-3xl font-bold text-zinc-900 mt-2">
+            New Password
+          </h1>
+          <p className="text-zinc-500 text-sm mt-2 font-medium">
+            Please enter your new secure password below.
+          </p>
         </div>
 
         {success ? (
           <div className="p-6 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-2xl text-center animate-in zoom-in-95">
             <p className="font-bold text-sm">Success!</p>
-            <p className="text-[10px] mt-1">Your password has been reset. Redirecting to login...</p>
+            <p className="text-[10px] mt-1">
+              Your password has been reset. Redirecting to login...
+            </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">New Password</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">
+                New Password
+              </label>
               <input
                 type="password"
                 required
@@ -76,7 +92,9 @@ export default function PasswordResetConfirmPage() {
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Confirm New Password</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">
+                Confirm New Password
+              </label>
               <input
                 type="password"
                 required
@@ -86,7 +104,11 @@ export default function PasswordResetConfirmPage() {
               />
             </div>
 
-            {error && <div className="p-4 bg-red-50 text-red-600 text-[10px] font-bold rounded-xl italic">{error}</div>}
+            {error && (
+              <div className="p-4 bg-red-50 text-red-600 text-[10px] font-bold rounded-xl italic">
+                {error}
+              </div>
+            )}
 
             <button
               type="submit"

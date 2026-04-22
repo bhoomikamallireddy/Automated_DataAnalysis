@@ -1,3 +1,4 @@
+import logging
 from rest_framework import viewsets, status, permissions
 from rest_framework.response import Response
 from django_q.tasks import async_task
@@ -7,18 +8,19 @@ from .models import AnalysisJob
 from .tasks import run_pipeline
 from .serializers import AnalysisJobSerializer
 from django.db import transaction
-from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.tokens import default_token_generator
-from django.template.loader import render_to_string
 from django.core.mail import send_mail
 from django.conf import settings
-
+from smtplib import SMTPException
 
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class RegisterView(APIView):
     # Allow anyone to sign up
@@ -30,7 +32,8 @@ class RegisterView(APIView):
             user = serializer.save()
             return Response({
                 "user_id": user.id,
-                "message": "User created successfully. Please login to get your token."
+                "username": user.username,
+                "message": f"Welcome {user.username}! Account created successfully. Please login now."
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -45,13 +48,13 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         # Automatically set the file_name from the uploaded file
-        file_obj = self.request.data.get('file')
-        instance = serializer.save(user=self.request.user, file_name=file_obj.name)
+        file_obj = self.request.FILES.get('file')
+        instance = serializer.save(user=self.request.user, file_name=file_obj.name if file_obj else "unknown_file")
+        logger.info("Created AnalysisJob ID %s for user %s", instance.id, self.request.user.username)
 
         # Trigger the background task and return immediately!
         #Lets analysis handle asynchronously files
         transaction.on_commit(lambda: async_task(run_pipeline, instance.id))
-
 
 class PasswordResetRequestView(APIView):
     
@@ -87,13 +90,28 @@ class PasswordResetRequestView(APIView):
                 The AutoEDA Team
                 """
                 
-                send_mail(
-                    subject, 
-                    message, 
-                    settings.EMAIL_HOST_USER, # Uses your Gmail address from settings
-                    [user.email], 
-                    fail_silently=False 
-                )
+                try:
+                    send_mail(
+                        subject, 
+                        message, 
+                        settings.EMAIL_HOST_USER, # Uses your Gmail address from settings
+                        [user.email], 
+                        fail_silently=False 
+                    )
+                    logger.info("Password reset email sent to %s", user.email)
+                except SMTPException as e:
+                    # Specific SMTP-level failure (auth, quota, bad recipient, etc.)
+                    logger.error("[PasswordReset] SMTPException for %s: %s", user.email, e, exc_info=True)
+                    return Response(
+                        {"detail": "Email service is temporarily unavailable. Please try again later."},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
+                except Exception as e:
+                    logger.exception("[PasswordReset] Unexpected email error for %s: %s", user.email, e, exc_info=True)
+                    return Response(
+                        {"detail": "Email service is temporarily unavailable. Please try again later."},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
             
             return Response({"detail": "Password reset link sent."}, status=status.HTTP_200_OK)
         
@@ -116,6 +134,12 @@ class PasswordResetConfirmView(APIView):
             
             # 2. Check if the token is valid for THIS user
             if default_token_generator.check_token(user, token):
+                # Django Password Validation
+                try:
+                    validate_password(new_password, user)
+                except ValidationError as e:
+                    return Response({"detail": list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
                 user.set_password(new_password)
                 user.save()
                 return Response({"detail": "Password has been reset."}, status=status.HTTP_200_OK)

@@ -1,17 +1,47 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import AnalysisJob
 
 User = get_user_model()
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)  
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password')
-
+        fields = ('id', 'username', 'email', 'password', 'confirm_password')
+    
+        def validate_password(self, value):
+          """
+        Run Django's built-in AUTH_PASSWORD_VALIDATORS against the raw password.
+        This enforces:
+          - Minimum length of 8 (set via min_length above AND MinimumLengthValidator)
+          - Not too common  (CommonPasswordValidator checks 20,000 common passwords)
+          - Not entirely numeric (NumericPasswordValidator)
+          - Not too similar to username/email (UserAttributeSimilarityValidator)
+        All four validators are already wired up in settings.py AUTH_PASSWORD_VALIDATORS.
+          """
+          try:
+            validate_password(value)
+          except DjangoValidationError as e:
+            # Forward Django's human-readable messages straight to the API response
+            raise serializers.ValidationError(list(e.messages))
+          return value
+    
+    def validate(self, data):
+        """Cross-field check: both password fields must match."""
+        if data.get('password') != data.get('confirm_password'):
+            raise serializers.ValidationError(
+                {"confirm_password": "Passwords do not match."}
+            )
+        return data
+    
     def create(self, validated_data):
+        # confirm_password is not a model field — strip it before hitting the DB
+        validated_data.pop('confirm_password')
         # Using create_user ensures the password is automatically hashed
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -19,16 +49,13 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data['password']
         )
         return user
-    def validate(self, data):
-        # Note: I'd include confirmPassword in fields 
-       
-        return data
 
 class AnalysisJobSerializer(serializers.ModelSerializer):
     class Meta:
         model = AnalysisJob
         # We include all fields so the frontend can see the ID, status, and results
         fields = '__all__'
+        read_only_fields = ['user', 'status', 'results']
         #Make file_name optional in the request since we set it in the view
         extra_kwargs = {'file_name': {'required': False}}
         

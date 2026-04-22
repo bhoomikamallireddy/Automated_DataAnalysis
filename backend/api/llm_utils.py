@@ -2,11 +2,15 @@ import json
 import os
 import time
 import requests
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.api_core import exceptions as gemini_exceptions
+
+
+logger = logging.getLogger(__name__)
 
 # Ensure environment variables are loaded
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,28 +35,28 @@ def get_llm_insights(analysis_results):
         Return a JSON object with exactly these keys:
         - "summary": A professional 3-sentence non-technical overview of the data patterns.
 
-        - "cleaning_tips": Acnotionable strategies for any missing values or outliers found.
+        - "cleaning_tips": Actionable strategies for any missing values or outliers found.
 
         - "feature_suggestions": Exactly 3 items. Each item MUST be a single string formatted as 'Title: Brief Description'. Do NOT use nested objects.
 
         - "hypotheses": 2 deep business questions the user should investigate based on these stats.
 
         """
-            # --- STAGE 1: GEMINI ---
+        # --- STAGE 1: GEMINI ---
         if gemini_key:
-          print("Attempting insights with Gemini...")
+          logger.info("Attempting insights with Gemini...")
           gemini_data = _call_gemini(gemini_key, prompt)
           if gemini_data:
             return _normalize_response(gemini_data)
 
-    # --- STAGE 2: GROK FALLBACK ---
+        # --- STAGE 2: GROK FALLBACK ---
         if grok_key:
-           print("Gemini failed/overloaded. Switching to Grok fallback...")
+           logger.warning("Gemini failed/overloaded. Switching to Grok fallback...")
            grok_data = _call_grok(grok_key, prompt)
            if grok_data:
             return _normalize_response(grok_data)
 
-        print("All LLM providers unavailable. Triggering system fallback...")
+        logger.error("All LLM providers unavailable. Triggering system fallback.")
         return None
     
 def _call_gemini(api_key, prompt, max_retries=2):
@@ -74,7 +78,7 @@ def _call_gemini(api_key, prompt, max_retries=2):
                 time.sleep((i + 1) * 10)
         return None
     except Exception as e:
-        print(f"Gemini Error: {e}")
+        logger.error("Gemini API error: %s", e, exc_info=True)
         return None
 
 def _call_grok(api_key, prompt, max_retries=2):
@@ -97,7 +101,7 @@ def _call_grok(api_key, prompt, max_retries=2):
             elif resp.status_code in [429, 503]:
                 time.sleep((i + 1) * 10)
         except Exception as e:
-            print(f"Grok Error: {e}")
+            logger.error("Grok API error: %s", e, exc_info=True)
     return None
 
 def _normalize_response(data):
