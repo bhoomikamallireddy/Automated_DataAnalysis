@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { getAuthToken } from "../utils/auth";
 import { useJobStatus } from "../hooks/useJobStatus";
 import { useRouter } from "next/navigation";
-import PlotlyChart from "../components/PlotlyChart";
+import PlotlyChart from "../components/charts/PlotlyChart";
 import {
   BarChart,
   Bar,
@@ -19,11 +19,14 @@ import {
 import React from "react";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
   "http://127.0.0.1:8000";
 const JOBS_API_URL = `${API_BASE_URL}/api/jobs/`;
 const HISTORY_REFRESH_INTERVAL_MS = 10000;
 const MODE_SWITCH_DELAY_MS = 600;
+const ACCESS_TOKEN_KEY = "access_token";
+const REFRESH_TOKEN_KEY = "refresh_token";
+const LAST_ACTIVE_JOB_ID_KEY = "last_active_job_id";
 const STATUS_PENDING = "PENDING";
 const STATUS_PROCESSING = "PROCESSING";
 const STATUS_COMPLETED = "COMPLETED";
@@ -52,12 +55,13 @@ const modules = [
 
 // --- DISTRIBUTION CHART ---
 function DistributionChart({ data, title }) {
-  if (!data || data.length === 0)
+  if (!data || data.length === 0) {
     return (
       <div className="text-xs text-zinc-400 italic">
         No distribution data available for this column.
       </div>
     );
+  }
 
   return (
     <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl transition-all duration-300 hover:bg-white hover:shadow-md">
@@ -169,8 +173,15 @@ function getDistributionPlotConfig(chartType, sampleData) {
   }
 }
 
+function clearAuthSession() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 const getCleanFileName = (fullName) => {
-  if (!fullName) return "provided dataset";
+  if (!fullName) {
+    return "provided dataset";
+  }
 
   // 1. Remove the file extension (.csv)
   let name = fullName.split(".").slice(0, -1).join(".");
@@ -211,7 +222,7 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
     if (!token) {
       router.push("/login");
     } else {
@@ -222,7 +233,7 @@ export default function Home() {
 
   // 1. HYDRATION: When the app first loads, check for an existing job
   useEffect(() => {
-    const savedJobId = localStorage.getItem("last_active_job_id");
+    const savedJobId = localStorage.getItem(LAST_ACTIVE_JOB_ID_KEY);
     if (savedJobId && isAuthorized) {
       setCurrentJobId(savedJobId);
       // Optionally, if you have a job saved, default to 'current' workspace
@@ -233,6 +244,12 @@ export default function Home() {
   const fetchHistory = useCallback(async () => {
     setIsHistoryLoading(true);
     const token = await getAuthToken();
+
+    if (!token) {
+      setIsHistoryLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(JOBS_API_URL, {
         headers: {
@@ -243,8 +260,8 @@ export default function Home() {
         const data = await response.json();
         setHistory(data);
       }
-    } catch (error) {
-      console.error("Error fetching history:", error);
+    } catch {
+      setUploadMessage("History could not be loaded right now.");
     } finally {
       setIsHistoryLoading(false);
     }
@@ -286,8 +303,7 @@ export default function Home() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    clearAuthSession();
     router.push("/login");
   };
 
@@ -300,6 +316,13 @@ export default function Home() {
     setUploadMessage("");
     setIsUploading(true);
     const token = await getAuthToken();
+
+    if (!token) {
+      setIsUploading(false);
+      setUploadMessage("Session expired. Please log in again.");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
 
@@ -316,18 +339,15 @@ export default function Home() {
       });
 
       if (response.status === 401) {
-        // Handle expired token / unauthorized
-        console.error("Session expired. Please log in again.");
-        localStorage.removeItem("access_token"); // Clear stale token
+        clearAuthSession();
         setUploadMessage("Session expired. Please log in again.");
-        router.push("/login"); // Force re-login
+        router.push("/login");
         return;
       }
 
       if (response.ok) {
         const data = await response.json();
-        // SAVE TO LOCAL STORAGE HERE
-        localStorage.setItem("last_active_job_id", data.id);
+        localStorage.setItem(LAST_ACTIVE_JOB_ID_KEY, data.id);
         setCurrentJobId(data.id);
         setFile(null);
         setUploadMessage("");
@@ -336,8 +356,7 @@ export default function Home() {
       } else {
         setUploadMessage("Upload failed. Please check the Django server.");
       }
-    } catch (error) {
-      console.error("Upload error:", error);
+    } catch {
       setUploadMessage("Upload failed because of a network or server error.");
     } finally {
       setIsUploading(false);
@@ -349,7 +368,7 @@ export default function Home() {
     setCurrentJobId(null);
     setFile(null);
     setUploadMessage("");
-    localStorage.removeItem("last_active_job_id");
+    localStorage.removeItem(LAST_ACTIVE_JOB_ID_KEY);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setWorkspaceMode("current");
   };
@@ -1590,9 +1609,13 @@ export default function Home() {
                                   </span>
                                   <ul className="mt-6 space-y-4">
                                     {results.ml_insights?.ai_observations?.hypotheses?.map(
-                                      (h, i) => (
+                                      (h) => (
                                         <li
-                                          key={i}
+                                          key={
+                                            typeof h === "string"
+                                              ? h
+                                              : h.question || JSON.stringify(h)
+                                          }
                                           className="group flex items-start text-sm text-zinc-700 leading-relaxed italic"
                                         >
                                           <span className="mr-3 mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
@@ -1652,7 +1675,7 @@ export default function Home() {
                                           : "";
                                       return (
                                         <div
-                                          key={i}
+                                          key={`${suggestionTitle}-${i}`}
                                           className="flex flex-col p-5 md:p-6 bg-white border border-emerald-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group cursor-default overflow-hidden"
                                         >
                                           <div className="h-7 w-7 shrink-0 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center mb-3 text-xs font-black group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
@@ -1851,7 +1874,7 @@ function HealthGauge({ score }) {
       </div>
       <div className="min-w-0">
         <p className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest group-hover:text-blue-400 transition-colors truncate">
-          AI Health Score
+          Health Score
         </p>
         <p className="text-xs font-bold text-zinc-700 truncate">
           {getHealthLabel(score)}

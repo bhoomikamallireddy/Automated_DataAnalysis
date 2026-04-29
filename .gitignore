@@ -5,6 +5,7 @@ ENV/
 backend/media/uploads/
 backend/media/
 backend/.env
+.env
 __pycache__/
 *.py[cod]
 *$py.class
