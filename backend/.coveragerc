@@ -1,0 +1,18 @@
+[run]
+source =
+    api
+    core
+omit =
+    */migrations/*
+    api/tests.py
+    api/test_*.py
+    conftest.py
+    manage.py
+    core/asgi.py
+    core/wsgi.py
+    core/settings.py
+    core/test_settings.py
+
+[report]
+show_missing = True
+skip_covered = False

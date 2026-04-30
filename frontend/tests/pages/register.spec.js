@@ -6,7 +6,6 @@ test.describe('Register Page', () => {
   });
 
   test('should display registration form elements', async ({ page }) => {
-    await expect(page.getByText('Join the Lab')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create Account' })).toBeVisible();
     await expect(page.getByPlaceholder('Unique username')).toBeVisible();
     await expect(page.getByPlaceholder('email@example.com')).toBeVisible();

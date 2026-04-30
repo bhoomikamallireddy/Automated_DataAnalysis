@@ -19,6 +19,14 @@ from api.serializers import RegisterSerializer
 User = get_user_model()
 
 
+def _test_credential(label):
+    return f"Zz{abs(hash((label, os.getpid())))}Aa!"
+
+
+TEST_USER_PASSWORD = _test_credential("user")
+TEST_INVALID_PASSWORD = _test_credential("invalid")
+
+
 @pytest.fixture
 def api_client():
     """Return an unauthenticated API client"""
@@ -28,7 +36,7 @@ def api_client():
 @pytest.fixture
 def create_user():
     """Factory fixture to create test users"""
-    def _create_user(username='testuser', email='test@example.com', password='testpass123'):
+    def _create_user(username='testuser', email='test@example.com', password=TEST_USER_PASSWORD):
         return User.objects.create_user(
             username=username,
             email=email,
@@ -71,7 +79,8 @@ class TestUserRegistrationWorkflow:
         register_data = {
             'username': 'workflowuser',
             'email': 'workflow@example.com',
-            'password': 'workflowpass123'
+            'password': TEST_USER_PASSWORD,
+            'confirm_password': TEST_USER_PASSWORD
         }
         
         register_response = api_client.post('/api/auth/register/', register_data, format='json')
@@ -81,7 +90,7 @@ class TestUserRegistrationWorkflow:
         
         login_data = {
             'username': 'workflowuser',
-            'password': 'workflowpass123'
+            'password': TEST_USER_PASSWORD
         }
         login_response = api_client.post('/api/auth/login/', login_data, format='json')
         assert login_response.status_code == status.HTTP_200_OK
@@ -108,8 +117,8 @@ class TestUserRegistrationWorkflow:
 
     def test_multiple_user_isolation(self, api_client, sample_csv_content):
         """Test that users can only see their own jobs"""
-        user1 = User.objects.create_user(username='user1', email='user1@example.com', password='pass123')
-        user2 = User.objects.create_user(username='user2', email='user2@example.com', password='pass123')
+        user1 = User.objects.create_user(username='user1', email='user1@example.com', password=TEST_USER_PASSWORD)
+        user2 = User.objects.create_user(username='user2', email='user2@example.com', password=TEST_USER_PASSWORD)
         
         client1 = APIClient()
         client2 = APIClient()
@@ -205,11 +214,11 @@ class TestTokenManagementWorkflow:
 
     def test_token_lifecycle(self, api_client, create_user):
         """Test complete token lifecycle: register -> login -> refresh -> use"""
-        user = create_user(username='tokenuser', email='token@example.com', password='tokenpass123')
+        user = create_user(username='tokenuser', email='token@example.com', password=TEST_USER_PASSWORD)
         
         login_response = api_client.post('/api/auth/login/', {
             'username': 'tokenuser',
-            'password': 'tokenpass123'
+            'password': TEST_USER_PASSWORD
         }, format='json')
         
         assert login_response.status_code == status.HTTP_200_OK
@@ -230,11 +239,11 @@ class TestTokenManagementWorkflow:
 
     def test_concurrent_token_refresh(self, api_client, create_user):
         """Test multiple refresh requests in sequence (Django test client is synchronous)"""
-        user = create_user(username='concurrentuser2', email='concurrent2@example.com', password='pass123')
+        user = create_user(username='concurrentuser2', email='concurrent2@example.com', password=TEST_USER_PASSWORD)
         
         login_response = api_client.post('/api/auth/login/', {
             'username': 'concurrentuser2',
-            'password': 'pass123'
+            'password': TEST_USER_PASSWORD
         }, format='json')
         
         refresh_token = login_response.data['refresh']
@@ -293,7 +302,7 @@ class TestSecurityWorkflow:
             response = api_client.post('/api/auth/register/', {
                 'username': malicious_input,
                 'email': 'test@example.com',
-                'password': 'testpass123'
+                'password': TEST_USER_PASSWORD
             }, format='json')
             assert response.status_code == status.HTTP_400_BAD_REQUEST
 

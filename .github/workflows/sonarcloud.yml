@@ -37,7 +37,7 @@ jobs:
           EMAIL_HOST_USER: test@example.com
           EMAIL_HOST_PASSWORD: test-email-password
           FRONTEND_URL: http://localhost:3000
-        run: pytest --cov=api --cov=core --cov-report=xml:coverage.xml --cov-report=term-missing
+        run: pytest --cov=api --cov=core --cov-config=.coveragerc --cov-report=xml:coverage.xml --cov-report=term-missing
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v3

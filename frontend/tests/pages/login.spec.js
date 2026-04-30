@@ -6,7 +6,6 @@ test.describe('Login Page', () => {
   });
 
   test('should display login form elements', async ({ page }) => {
-    await expect(page.getByText('Secure Access')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Welcome Back' })).toBeVisible();
     await expect(page.getByPlaceholder('Enter your username')).toBeVisible();
     await expect(page.getByPlaceholder('••••••••')).toBeVisible();

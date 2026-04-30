@@ -39,7 +39,7 @@ def get_llm_insights(analysis_results):
 
         - "feature_suggestions": Exactly 3 items. Each item MUST be a single string formatted as 'Title: Brief Description'. Do NOT use nested objects.
 
-        - "hypotheses": 2 deep business questions the user should investigate based on these stats.
+        - "hypotheses": 3 deep business questions the user should investigate based on these stats.
 
         """
         # --- STAGE 1: GEMINI ---
@@ -105,39 +105,54 @@ def _call_grok(api_key, prompt, max_retries=2):
     return None
 
 def _normalize_response(data):
-    """Defensive cleaning: Ensures data types match what the Frontend expects"""
-    # 1. Ensure Summary is a string
-    if not isinstance(data.get("summary"), str):
-        data["summary"] = str(data.get("summary", ""))
+    """Main Orchestrator: Defensive cleaning to match Frontend expectations"""
+    
+    # 1. Clean Summary (String)
+    data["summary"] = str(data.get("summary") or "")
 
-    # 2. Ensure Hypotheses is a List of Strings
-    raw_h = data.get("hypotheses", [])
-    clean_h = []
-    if isinstance(raw_h, list):
-        for h in raw_h:
-            if isinstance(h, dict):
-                val = h.get("question") or h.get("investigation_focus") or list(h.values())[0]
-                clean_h.append(str(val))
-            else:
-                clean_h.append(str(h))
-    data["hypotheses"] = clean_h[:2]
+    # 2. Clean Hypotheses (List of Strings)
+    data["hypotheses"] = _clean_list_items(data.get("hypotheses", []), max_items=3)
 
-    # 3. Ensure Cleaning Tips is a single string
+    # 3. Clean Cleaning Tips (String)
     tips = data.get("cleaning_tips", "")
     if isinstance(tips, list):
         data["cleaning_tips"] = ". ".join([str(t) for t in tips])
+    else:
+        data["cleaning_tips"] = str(tips)
 
-    # 4. Ensure Feature Suggestions is a List of Strings
-    raw_s = data.get("feature_suggestions", [])
-    clean_s = []
-    if isinstance(raw_s, list):
-        for s in raw_s:
-            if isinstance(s, dict):
-                val = list(s.values())[0]
-                clean_s.append(str(val))
-            else:
-                clean_s.append(str(s))
-    data["feature_suggestions"] = clean_s[:3]
-    return data   
+    # 4. Clean Feature Suggestions (List of Strings)
+    data["feature_suggestions"] = _clean_list_items(data.get("feature_suggestions", []), max_items=3)
+
+    return data
 
 
+def _clean_list_items(raw_list, max_items):
+    """Helper: Extracts strings from mixed lists/dicts and caps the length"""
+    if not isinstance(raw_list, list):
+        return []
+    
+    clean_items = []
+    for item in raw_list:
+        val = _extract_string_value(item)
+        if val:  # Filters out empty strings immediately
+            clean_items.append(val)
+    
+    return clean_items[:max_items]
+
+
+def _extract_string_value(item):
+    """Helper: Safely extracts a string from potential dicts returned by LLMs"""
+    
+    if isinstance(item, dict):
+        if not item:
+            return ""
+        
+        # Preferred keys first
+        val = item.get("question") or item.get("investigation_focus")
+        if val:
+            return str(val)
+        
+        # Safe fallback (NO IndexError risk)
+        return str(next(iter(item.values()), ""))
+
+    return str(item) if item is not None else ""
