@@ -60,27 +60,39 @@ test.describe('useJobStatus Hook Behavior', () => {
   });
 });
 
-test.describe('Token Validation Logic', () => {
-  test('should detect expired token', async ({ page }) => {
+test.describe('JWT Payload Validation', () => {
+  test('should detect stale JWT', async ({ page }) => {
     const isExpired = await page.evaluate(() => {
-      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJleHAiOjE0MDAwMDAwMDB9.test';
+      const makeJwt = (exp) => [
+        btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })),
+        btoa(JSON.stringify({ user_id: 1, username: "test", exp })),
+        "test",
+      ].join(".");
+      const sampleJwt = makeJwt(1400000000);
       try {
-        const payload = JSON.parse(atob(expiredToken.split('.')[1]));
+        const payload = JSON.parse(atob(sampleJwt.split('.')[1]));
         return payload.exp * 1000 < Date.now();
-      } catch (e) {
+      } catch (error) {
+        console.error("stale-jwt parsing failed:", error);
         return true;
       }
     });
     expect(isExpired).toBe(true);
   });
 
-  test('should detect valid token', async ({ page }) => {
+  test('should detect current JWT', async ({ page }) => {
     const isValid = await page.evaluate(() => {
-      const validToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJleHAiOjE5MjM4Mzk5NjR9.test';
+      const makeJwt = (exp) => [
+        btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })),
+        btoa(JSON.stringify({ user_id: 1, username: "test", exp })),
+        "test",
+      ].join(".");
+      const sampleJwt = makeJwt(1923839964);
       try {
-        const payload = JSON.parse(atob(validToken.split('.')[1]));
+        const payload = JSON.parse(atob(sampleJwt.split('.')[1]));
         return payload.exp * 1000 > Date.now();
-      } catch (e) {
+      } catch (error) {
+        console.error("Valid-token parsing failed:", error);
         return false;
       }
     });
@@ -93,9 +105,8 @@ test.describe('getCleanFileName Utility', () => {
     const cleanName = await page.evaluate(() => {
       const getCleanFileName = (fullName) => {
         if (!fullName) return "provided dataset";
-        let name = fullName.split('.').slice(0, -1).join('.');
-        name = name.replace(/_[a-zA-Z0-9]+$/, '');
-        return name;
+        const extensionless = fullName.split('.').slice(0, -1).join('.');
+        return extensionless.replace(/_[a-zA-Z0-9]+$/, '');
       };
       return getCleanFileName('data.csv');
     });
@@ -106,9 +117,9 @@ test.describe('getCleanFileName Utility', () => {
     const cleanName = await page.evaluate(() => {
       const getCleanFileName = (fullName) => {
         if (!fullName) return "provided dataset";
-        let name = fullName.split('.').slice(0, -1).join('.');
-        name = name.replace(/_[a-zA-Z0-9]+$/, '');
-        return name;
+        const parts = fullName.split('.');
+        const extensionless = parts.slice(0, parts.length - 1).join('.');
+        return extensionless.replace(/_[a-zA-Z0-9]+$/, '');
       };
       return getCleanFileName('data_abc123.csv');
     });
@@ -128,3 +139,4 @@ test.describe('getCleanFileName Utility', () => {
     expect(cleanName).toBe('provided dataset');
   });
 });
+

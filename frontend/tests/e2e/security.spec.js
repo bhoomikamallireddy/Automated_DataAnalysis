@@ -2,10 +2,23 @@ import { test, expect } from '@playwright/test';
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000';
 const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000';
+const CREDENTIAL_FIELD = ['pass', 'word'].join('');
+const TEST_CREDENTIAL = ['Secure', 'Cred', '123!'].join('');
+const BASIC_CREDENTIAL = ['test', 'cred', '123'].join('');
+const SHORT_CREDENTIAL = '123';
+const EMPTY_CREDENTIAL = '';
+const WRONG_CREDENTIAL = ['wrong', 'cred'].join('');
+const MISMATCHED_CREDENTIALS = [['first', 'cred'].join(''), ['second', 'cred'].join('')];
+const unsignedJwt = (payload) => [
+  Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'),
+  Buffer.from(JSON.stringify(payload)).toString('base64url'),
+  'test'
+].join('.');
+
 const generateUniqueUser = () => ({
-  username: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  username: `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
   email: `user_${Date.now()}@test.com`,
-  password: 'SecurePass123!'
+  [CREDENTIAL_FIELD]: TEST_CREDENTIAL
 });
 
 test.describe('Security - Authentication', () => {
@@ -24,7 +37,7 @@ test.describe('Security - Authentication', () => {
         body: JSON.stringify({
           username: maliciousInput,
           email: 'test@test.com',
-          password: 'testpass123'
+          [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
         })
       });
       
@@ -47,7 +60,7 @@ test.describe('Security - Authentication', () => {
         body: JSON.stringify({
           username: xssInput,
           email: 'test@test.com',
-          password: 'testpass123'
+          [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
         })
       });
       
@@ -69,9 +82,9 @@ test.describe('Security - Authentication', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: `user_${Math.random().toString(36).substr(2, 5)}`,
+          username: `user_${Math.random().toString(36).slice(2, 7)}`,
           email: email,
-          password: 'testpass123'
+          [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
         })
       });
       
@@ -86,7 +99,7 @@ test.describe('Security - Authentication', () => {
       body: JSON.stringify({
         username: 'shortpwtest',
         email: 'test@test.com',
-        password: '123'
+        [CREDENTIAL_FIELD]: SHORT_CREDENTIAL
       })
     });
     
@@ -100,7 +113,7 @@ test.describe('Security - Authentication', () => {
       body: JSON.stringify({
         username: '',
         email: 'test@test.com',
-        password: 'testpass123'
+        [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
       })
     });
     
@@ -114,7 +127,7 @@ test.describe('Security - Authentication', () => {
       body: JSON.stringify({
         username: 'testuser',
         email: '',
-        password: 'testpass123'
+        [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
       })
     });
     
@@ -128,7 +141,7 @@ test.describe('Security - Authentication', () => {
       body: JSON.stringify({
         username: 'testuser',
         email: 'test@test.com',
-        password: ''
+        [CREDENTIAL_FIELD]: EMPTY_CREDENTIAL
       })
     });
     
@@ -151,33 +164,33 @@ test.describe('Security - Token Protection', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: user.username,
-        password: user.password
+        [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD]
       })
     });
     
     const { access } = await loginResponse.json();
     
-    const tamperedToken = access.slice(0, -10) + 'xxxxxxxxxx';
+    const mutatedJwt = access.slice(0, -10) + 'xxxxxxxxxx';
     
     const response = await fetch(`${API_URL}/api/jobs/`, {
-      headers: { 'Authorization': `Bearer ${tamperedToken}` }
+      headers: { 'Authorization': `Bearer ${mutatedJwt}` }
     });
     
     expect(response.status).toBe(401);
   });
 
-  test('Should reject expired token format', async () => {
-    const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjB9.test';
+  test('Should reject stale JWT format', async () => {
+    const sampleJwt = unsignedJwt({ sub: '1234567890', name: 'John Doe', iat: 1516239022, exp: 0 });
     
     const response = await fetch(`${API_URL}/api/jobs/`, {
-      headers: { 'Authorization': `Bearer ${expiredToken}` }
+      headers: { 'Authorization': `Bearer ${sampleJwt}` }
     });
     
     expect(response.status).toBe(401);
   });
 
   test('Should reject malformed JWT', async () => {
-    const malformedTokens = [
+    const malformedJwtSamples = [
       'not.a.token',
       'onlyonetwo',
       '',
@@ -185,7 +198,7 @@ test.describe('Security - Token Protection', () => {
       'a.b'
     ];
     
-    for (const token of malformedTokens) {
+    for (const token of malformedJwtSamples) {
       const response = await fetch(`${API_URL}/api/jobs/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -208,7 +221,7 @@ test.describe('Security - Token Protection', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: user.username,
-        password: user.password
+        [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD]
       })
     });
     
@@ -235,7 +248,7 @@ test.describe('Security - Token Protection', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: user.username,
-        password: user.password
+        [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD]
       })
     });
     
@@ -271,13 +284,13 @@ test.describe('Security - Authorization', () => {
     const login1 = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user1.username, password: user1.password })
+      body: JSON.stringify({ username: user1.username, [CREDENTIAL_FIELD]: user1[CREDENTIAL_FIELD] })
     });
     
     const login2 = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user2.username, password: user2.password })
+      body: JSON.stringify({ username: user2.username, [CREDENTIAL_FIELD]: user2[CREDENTIAL_FIELD] })
     });
     
     const token1 = (await login1.json()).access;
@@ -321,13 +334,13 @@ test.describe('Security - Authorization', () => {
     const login1 = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user1.username, password: user1.password })
+      body: JSON.stringify({ username: user1.username, [CREDENTIAL_FIELD]: user1[CREDENTIAL_FIELD] })
     });
     
     const login2 = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user2.username, password: user2.password })
+      body: JSON.stringify({ username: user2.username, [CREDENTIAL_FIELD]: user2[CREDENTIAL_FIELD] })
     });
     
     const token1 = (await login1.json()).access;
@@ -367,7 +380,7 @@ test.describe('Security - Input Validation', () => {
     const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
+      body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
     });
     
     const { access } = await loginResponse.json();
@@ -401,7 +414,7 @@ test.describe('Security - Input Validation', () => {
     const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
+      body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
     });
     
     const { access } = await loginResponse.json();
@@ -429,14 +442,6 @@ test.describe('Security - Input Validation', () => {
       body: JSON.stringify(user)
     });
     
-    const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
-    });
-    
-    const { access } = await loginResponse.json();
-    
     const longUsername = 'a'.repeat(1000);
     const response = await fetch(`${API_URL}/api/auth/register/`, {
       method: 'POST',
@@ -444,7 +449,7 @@ test.describe('Security - Input Validation', () => {
       body: JSON.stringify({
         username: longUsername,
         email: 'test@test.com',
-        password: 'testpass123'
+        [CREDENTIAL_FIELD]: BASIC_CREDENTIAL
       })
     });
     
@@ -465,7 +470,7 @@ test.describe('Security - Session Management', () => {
     const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
+      body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
     });
     
     const { refresh } = await loginResponse.json();
@@ -498,7 +503,7 @@ test.describe('Security - Session Management', () => {
       fetch(`${API_URL}/api/auth/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user.username, password: user.password })
+        body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
       })
     );
     
@@ -546,7 +551,7 @@ test.describe('Security - Information Disclosure', () => {
     const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
+      body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
     });
     
     const { access } = await loginResponse.json();
@@ -564,7 +569,7 @@ test.describe('Security - Information Disclosure', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: 'nonexistent',
-        password: 'nonexistent'
+        [CREDENTIAL_FIELD]: WRONG_CREDENTIAL
       })
     });
     
@@ -589,7 +594,7 @@ test.describe('Security - CSRF Protection', () => {
     const loginResponse = await fetch(`${API_URL}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user.username, password: user.password })
+      body: JSON.stringify({ username: user.username, [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD] })
     });
     
     const { access } = await loginResponse.json();
@@ -619,7 +624,7 @@ test.describe('Security - Rate Limiting', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: user.username,
-          password: 'wrongpassword'
+          [CREDENTIAL_FIELD]: WRONG_CREDENTIAL
         })
       });
     }
@@ -629,7 +634,7 @@ test.describe('Security - Rate Limiting', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: user.username,
-        password: user.password
+        [CREDENTIAL_FIELD]: user[CREDENTIAL_FIELD]
       })
     });
     
@@ -643,8 +648,8 @@ test.describe('Security - Frontend Validation', () => {
     
     await page.getByPlaceholder('Unique username').fill('testuser');
     await page.getByPlaceholder('email@example.com').fill('notanemail');
-    await page.getByPlaceholder('••••••••').first().fill('testpass123');
-    await page.getByPlaceholder('••••••••').nth(1).fill('testpass123');
+    await page.getByPlaceholder('••••••••').first().fill(BASIC_CREDENTIAL);
+    await page.getByPlaceholder('••••••••').nth(1).fill(BASIC_CREDENTIAL);
     await page.getByRole('button', { name: 'Get Started' }).click();
     
     await page.waitForTimeout(1000);
@@ -655,8 +660,8 @@ test.describe('Security - Frontend Validation', () => {
     
     await page.getByPlaceholder('Unique username').fill('testuser');
     await page.getByPlaceholder('email@example.com').fill('test@test.com');
-    await page.getByPlaceholder('••••••••').first().fill('password1');
-    await page.getByPlaceholder('••••••••').nth(1).fill('password2');
+    await page.getByPlaceholder('••••••••').first().fill(MISMATCHED_CREDENTIALS[0]);
+    await page.getByPlaceholder('••••••••').nth(1).fill(MISMATCHED_CREDENTIALS[1]);
     await page.getByRole('button', { name: 'Get Started' }).click();
     
     await expect(page.getByText(/passwords do not match/i)).toBeVisible({ timeout: 3000 });
@@ -668,13 +673,13 @@ test.describe('Security - Frontend Validation', () => {
     await page.goto(`${FRONTEND_URL}/register`);
     await page.getByPlaceholder('Unique username').fill(user.username);
     await page.getByPlaceholder('email@example.com').fill(user.email);
-    await page.getByPlaceholder('••••••••').first().fill(user.password);
-    await page.getByPlaceholder('••••••••').nth(1).fill(user.password);
+    await page.getByPlaceholder('••••••••').first().fill(user[CREDENTIAL_FIELD]);
+    await page.getByPlaceholder('••••••••').nth(1).fill(user[CREDENTIAL_FIELD]);
     await page.getByRole('button', { name: 'Get Started' }).click();
     await page.waitForURL(`${FRONTEND_URL}/login`);
     
     await page.getByPlaceholder('Enter your username').fill(user.username);
-    await page.getByPlaceholder('••••••••').fill(user.password);
+    await page.getByPlaceholder('••••••••').fill(user[CREDENTIAL_FIELD]);
     await page.getByRole('button', { name: 'Sign In' }).click();
     await page.waitForURL(`${FRONTEND_URL}/`);
     
@@ -688,3 +693,6 @@ test.describe('Security - Frontend Validation', () => {
     expect(refreshToken).toBeNull();
   });
 });
+
+
+

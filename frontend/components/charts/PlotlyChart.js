@@ -1,5 +1,6 @@
 "use client";
 import dynamic from 'next/dynamic';
+import PropTypes from "prop-types";
 
 // This is the magic part: it tells Next.js NOT to run this on the server
 const Plot = dynamic(() => import("react-plotly.js"), { 
@@ -24,3 +25,14 @@ export default function PlotlyChart({ data, layout, config }) {
     />
   );
 }
+
+PlotlyChart.propTypes = {
+  data: PropTypes.arrayOf(PropTypes.object).isRequired,
+  layout: PropTypes.object,
+  config: PropTypes.object,
+};
+
+PlotlyChart.defaultProps = {
+  layout: {},
+  config: {},
+};

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from "react";
+import PropTypes from "prop-types";
 import { getAuthToken } from "../utils/auth";
 import { useJobStatus } from "../hooks/useJobStatus";
 import { useRouter } from "next/navigation";
@@ -16,7 +17,6 @@ import {
   Scatter,
   CartesianGrid,
 } from "recharts";
-import React from "react";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
@@ -94,6 +94,16 @@ function DistributionChart({ data, title }) {
     </div>
   );
 }
+
+DistributionChart.propTypes = {
+  data: PropTypes.arrayOf(
+    PropTypes.shape({
+      bin: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      count: PropTypes.number,
+    }),
+  ).isRequired,
+  title: PropTypes.string.isRequired,
+};
 
 function getStatusBadgeClass(status) {
   if (status === STATUS_COMPLETED) {
@@ -173,6 +183,28 @@ function getDistributionPlotConfig(chartType, sampleData) {
   }
 }
 
+function getCleaningTipsText(cleaningTips) {
+  if (typeof cleaningTips === "string") {
+    return cleaningTips;
+  }
+
+  return "Refer to the data audit for specific cleaning recommendations.";
+}
+
+function getFeatureSuggestionDetails(suggestion) {
+  if (typeof suggestion === "string") {
+    return {
+      title: suggestion,
+      description: "",
+    };
+  }
+
+  return {
+    title: suggestion.name || suggestion.suggestion || "New Feature",
+    description: suggestion.description || "",
+  };
+}
+
 function clearAuthSession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -193,6 +225,65 @@ const getCleanFileName = (fullName) => {
   return name;
 };
 
+function useAuthorization(router) {
+  const [isAuthorized] = useState(
+    () =>
+      typeof globalThis.window !== "undefined" &&
+      Boolean(localStorage.getItem(ACCESS_TOKEN_KEY)),
+  );
+
+  useEffect(() => {
+    if (!isAuthorized) {
+      router.push("/login");
+    }
+  }, [isAuthorized, router]);
+
+  return isAuthorized;
+}
+
+function usePersistedJob(isAuthorized, setCurrentJobId, setWorkspaceMode) {
+  useEffect(() => {
+    const savedJobId = localStorage.getItem(LAST_ACTIVE_JOB_ID_KEY);
+    if (savedJobId && isAuthorized) {
+      setCurrentJobId(savedJobId);
+      setWorkspaceMode("current");
+    }
+  }, [isAuthorized, setCurrentJobId, setWorkspaceMode]);
+}
+
+function useHistoryRefresh(workspaceMode, isAuthorized, history, fetchHistory) {
+  useEffect(() => {
+    if (workspaceMode === "history" && isAuthorized) {
+      fetchHistory();
+    }
+  }, [fetchHistory, workspaceMode, isAuthorized]);
+
+  useEffect(() => {
+    const hasActiveJobs = history.some(
+      (job) =>
+        job.status === STATUS_PROCESSING || job.status === STATUS_PENDING,
+    );
+
+    if (workspaceMode !== "history" || !hasActiveJobs) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(fetchHistory, HISTORY_REFRESH_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [fetchHistory, workspaceMode, history]);
+}
+
+function useSwitchModeCleanup(switchModeTimeoutRef) {
+  useEffect(() => {
+    return () => {
+      const timeoutId = switchModeTimeoutRef.current;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [switchModeTimeoutRef]);
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -201,8 +292,6 @@ export default function Home() {
   const [currentJobId, setCurrentJobId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedRow, setExpandedRow] = useState(null);
-  // 1. Internal loading state to prevent UI flicker - Local loading State
-  const [isAuthorized, setIsAuthorized] = useState(false);
   const [distChartType, setDistChartType] = useState("violin");
   const [history, setHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
@@ -216,30 +305,11 @@ export default function Home() {
     error: jobError,
   } = useJobStatus(currentJobId);
   const router = useRouter();
+  const isAuthorized = useAuthorization(router);
   const activeModule = useMemo(
     () => modules.find((module) => module.id === activeTab),
     [activeTab],
   );
-
-  useEffect(() => {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-    if (!token) {
-      router.push("/login");
-    } else {
-      // 2. ONLY set authorized to true if the token actually exists
-      setIsAuthorized(true);
-    }
-  }, [router]);
-
-  // 1. HYDRATION: When the app first loads, check for an existing job
-  useEffect(() => {
-    const savedJobId = localStorage.getItem(LAST_ACTIVE_JOB_ID_KEY);
-    if (savedJobId && isAuthorized) {
-      setCurrentJobId(savedJobId);
-      // Optionally, if you have a job saved, default to 'current' workspace
-      setWorkspaceMode("current");
-    }
-  }, [isAuthorized]);
 
   const fetchHistory = useCallback(async () => {
     setIsHistoryLoading(true);
@@ -267,40 +337,9 @@ export default function Home() {
     }
   }, []);
 
-  // 3. Trigger fetch when workspaceMode changes to 'history'
-  useEffect(() => {
-    if (workspaceMode === "history" && isAuthorized) {
-      fetchHistory();
-    }
-  }, [fetchHistory, workspaceMode, isAuthorized]);
-
-  // Auto-refresh history while there are active jobs in the history view
-  useEffect(() => {
-    let intervalId;
-    const hasActiveJobs = history.some(
-      (job) =>
-        job.status === STATUS_PROCESSING || job.status === STATUS_PENDING,
-    );
-    if (workspaceMode === "history" && hasActiveJobs) {
-      intervalId = setInterval(() => {
-        fetchHistory();
-      }, HISTORY_REFRESH_INTERVAL_MS);
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [fetchHistory, workspaceMode, history]);
-
-  useEffect(() => {
-    return () => {
-      if (switchModeTimeoutRef.current) {
-        clearTimeout(switchModeTimeoutRef.current);
-      }
-    };
-  }, []);
+  usePersistedJob(isAuthorized, setCurrentJobId, setWorkspaceMode);
+  useHistoryRefresh(workspaceMode, isAuthorized, history, fetchHistory);
+  useSwitchModeCleanup(switchModeTimeoutRef);
 
   const handleLogout = () => {
     clearAuthSession();
@@ -505,7 +544,8 @@ export default function Home() {
                     : "text-zinc-500 hover:bg-zinc-50"
                 }`}
               >
-                <span className="mr-3">{m.icon}</span> {m.label}
+                <span className="mr-3">{m.icon}</span>
+                {m.label}
               </button>
             ))}
           </div>
@@ -987,7 +1027,7 @@ export default function Home() {
                                     {Object.keys(
                                       results?.metadata?.column_types || {},
                                     ).map((col) => (
-                                      <React.Fragment key={col}>
+                                      <Fragment key={col}>
                                         <tr
                                           onClick={() => toggleExpandedRow(col)}
                                           onKeyDown={(event) =>
@@ -996,7 +1036,7 @@ export default function Home() {
                                               col,
                                             )
                                           }
-                                          role="button"
+                                          role="row"
                                           tabIndex={0}
                                           className={`cursor-pointer transition-colors ${expandedRow === col ? "bg-blue-50/30" : "hover:bg-zinc-50/50"}`}
                                           aria-expanded={expandedRow === col}
@@ -1103,7 +1143,7 @@ export default function Home() {
                                             </td>
                                           </tr>
                                         )}
-                                      </React.Fragment>
+                                      </Fragment>
                                     ))}
                                   </tbody>
                                 </table>
@@ -1293,9 +1333,9 @@ export default function Home() {
 
                                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                     {results?.ml_insights?.bivariate_gallery?.map(
-                                      (pair, idx) => (
+                                      (pair) => (
                                         <div
-                                          key={idx}
+                                          key={`${pair.x_name}-${pair.y_name}`}
                                           className="p-5 bg-white border border-zinc-100 rounded-3xl shadow-sm hover:shadow-lg transition-all flex flex-col"
                                         >
                                           <div className="flex items-start justify-between gap-4 mb-4">
@@ -1636,11 +1676,10 @@ export default function Home() {
                                     Cleaning Strategy
                                   </span>
                                   <p className="mt-6 text-blue-900 text-sm leading-relaxed font-medium">
-                                    {typeof results.ml_insights?.ai_observations
-                                      ?.cleaning_tips === "string"
-                                      ? results.ml_insights?.ai_observations
-                                          ?.cleaning_tips
-                                      : "Refer to the data audit for specific cleaning recommendations."}
+                                    {getCleaningTipsText(
+                                      results.ml_insights?.ai_observations
+                                        ?.cleaning_tips,
+                                    )}
                                   </p>
                                 </div>
                               </div>
@@ -1661,21 +1700,13 @@ export default function Home() {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                   {results.ml_insights?.ai_observations?.feature_suggestions?.map(
                                     (s, i) => {
-                                      // DEFENSIVE EXTRACTION: Handle string, {name, description}, or {suggestion}
-                                      const suggestionTitle =
-                                        typeof s === "string"
-                                          ? s
-                                          : s.name ||
-                                            s.suggestion ||
-                                            "New Feature";
-
-                                      const suggestionDesc =
-                                        typeof s === "object" && s.description
-                                          ? s.description
-                                          : "";
+                                      const {
+                                        title: suggestionTitle,
+                                        description: suggestionDesc,
+                                      } = getFeatureSuggestionDetails(s);
                                       return (
                                         <div
-                                          key={`${suggestionTitle}-${i}`}
+                                          key={suggestionTitle}
                                           className="flex flex-col p-5 md:p-6 bg-white border border-emerald-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group cursor-default overflow-hidden"
                                         >
                                           <div className="h-7 w-7 shrink-0 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center mb-3 text-xs font-black group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
@@ -1685,7 +1716,7 @@ export default function Home() {
                                             {suggestionTitle}
                                           </p>
                                           {suggestionDesc && (
-                                            <p className="text-xs text-zinc-500 leading-relaxed italic  break-words mt-auto pt-1">
+                                            <p className="text-xs text-zinc-500 leading-relaxed italic break-words mt-auto pt-1">
                                               {suggestionDesc}
                                             </p>
                                           )}
@@ -1833,6 +1864,16 @@ function MetricCard({ label, value, color = "text-zinc-900" }) {
   );
 }
 
+MetricCard.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  color: PropTypes.string,
+};
+
+MetricCard.defaultProps = {
+  color: "text-zinc-900",
+};
+
 function HealthGauge({ score }) {
   const getColor = (s) => {
     if (s >= 90) return "#10b981";
@@ -1883,3 +1924,7 @@ function HealthGauge({ score }) {
     </div>
   );
 }
+
+HealthGauge.propTypes = {
+  score: PropTypes.number.isRequired,
+};

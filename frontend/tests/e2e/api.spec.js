@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000';
 const generateUniqueUser = () => ({
-  username: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  username: `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
   email: `user_${Date.now()}@test.com`,
   password: 'SecurePass123!'
 });
@@ -255,7 +255,7 @@ test.describe('API - Jobs Endpoints', () => {
     expect(response.status).toBe(401);
   });
 
-  test('POST /api/jobs/ - Success', async ({ request }) => {
+  test('POST /api/jobs/ - Success', async () => {
     const csvContent = 'col1,col2,col3\n1,2,3\n4,5,6';
     const csvBuffer = Buffer.from(csvContent);
     

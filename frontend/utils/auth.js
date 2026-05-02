@@ -28,7 +28,7 @@ const isTokenExpired = (token) => {
 };
 
 export const getAuthToken = async () => {
-  if (typeof window === "undefined") {
+  if (typeof globalThis.window === "undefined") {
     return null;
   }
 
@@ -52,7 +52,7 @@ export const getAuthToken = async () => {
 
     if (!response.ok) {
       clearStoredTokens();
-      window.location.href = LOGIN_PATH;
+      globalThis.location.href = LOGIN_PATH;
       return null;
     }
 
@@ -61,7 +61,7 @@ export const getAuthToken = async () => {
     return data.access;
   } catch {
     clearStoredTokens();
-    window.location.href = LOGIN_PATH;
+    globalThis.location.href = LOGIN_PATH;
     return null;
   }
 };
