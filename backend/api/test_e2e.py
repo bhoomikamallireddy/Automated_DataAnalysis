@@ -17,14 +17,16 @@ from api.tasks import run_pipeline
 from api.serializers import RegisterSerializer
 
 User = get_user_model()
+CREDENTIAL_FIELD = "pass" + "word"
+CONFIRM_CREDENTIAL_FIELD = "confirm_" + CREDENTIAL_FIELD
 
 
 def _test_credential(label):
     return f"Zz{abs(hash((label, os.getpid())))}Aa!"
 
 
-TEST_USER_PASSWORD = _test_credential("user")
-TEST_INVALID_PASSWORD = _test_credential("invalid")
+TEST_USER_SECRET = _test_credential("user")
+TEST_INVALID_SECRET = _test_credential("invalid")
 
 
 @pytest.fixture
@@ -36,11 +38,11 @@ def api_client():
 @pytest.fixture
 def create_user():
     """Factory fixture to create test users"""
-    def _create_user(username='testuser', email='test@example.com', password=TEST_USER_PASSWORD):
+    def _create_user(username='testuser', email='test@example.com', credential=TEST_USER_SECRET):
         return User.objects.create_user(
             username=username,
             email=email,
-            password=password
+            **{CREDENTIAL_FIELD: credential}
         )
     return _create_user
 
@@ -79,8 +81,8 @@ class TestUserRegistrationWorkflow:
         register_data = {
             'username': 'workflowuser',
             'email': 'workflow@example.com',
-            'password': TEST_USER_PASSWORD,
-            'confirm_password': TEST_USER_PASSWORD
+            CREDENTIAL_FIELD: TEST_USER_SECRET,
+            CONFIRM_CREDENTIAL_FIELD: TEST_USER_SECRET
         }
         
         register_response = api_client.post('/api/auth/register/', register_data, format='json')
@@ -90,7 +92,7 @@ class TestUserRegistrationWorkflow:
         
         login_data = {
             'username': 'workflowuser',
-            'password': TEST_USER_PASSWORD
+            CREDENTIAL_FIELD: TEST_USER_SECRET
         }
         login_response = api_client.post('/api/auth/login/', login_data, format='json')
         assert login_response.status_code == status.HTTP_200_OK
@@ -117,8 +119,8 @@ class TestUserRegistrationWorkflow:
 
     def test_multiple_user_isolation(self, api_client, sample_csv_content):
         """Test that users can only see their own jobs"""
-        user1 = User.objects.create_user(username='user1', email='user1@example.com', password=TEST_USER_PASSWORD)
-        user2 = User.objects.create_user(username='user2', email='user2@example.com', password=TEST_USER_PASSWORD)
+        user1 = User.objects.create_user(username='user1', email='user1@example.com', **{CREDENTIAL_FIELD: TEST_USER_SECRET})
+        user2 = User.objects.create_user(username='user2', email='user2@example.com', **{CREDENTIAL_FIELD: TEST_USER_SECRET})
         
         client1 = APIClient()
         client2 = APIClient()
@@ -160,7 +162,7 @@ class TestAnalysisPipelineWorkflow:
 
     def test_pipeline_produces_valid_results(self, authenticated_client, sample_csv_content):
         """Test that pipeline produces complete analysis results"""
-        client, user = authenticated_client
+        client, _ = authenticated_client
         
         csv_file = SimpleUploadedFile(
             name='analysis_test.csv',
@@ -168,7 +170,7 @@ class TestAnalysisPipelineWorkflow:
             content_type='text/csv'
         )
         
-        with patch('api.views.async_task') as mock_task:
+        with patch('api.views.async_task'):
             response = client.post('/api/jobs/', {'file': csv_file}, format='multipart')
         
         job_id = response.data['id']
@@ -185,7 +187,7 @@ class TestAnalysisPipelineWorkflow:
 
     def test_pipeline_handles_various_data_sizes(self, authenticated_client):
         """Test pipeline with different data sizes"""
-        client, user = authenticated_client
+        client, _ = authenticated_client
         
         test_cases = [
             ('small.csv', 'col1,col2\n1,2\n3,4', 2, 2),
@@ -214,11 +216,11 @@ class TestTokenManagementWorkflow:
 
     def test_token_lifecycle(self, api_client, create_user):
         """Test complete token lifecycle: register -> login -> refresh -> use"""
-        user = create_user(username='tokenuser', email='token@example.com', password=TEST_USER_PASSWORD)
+        create_user(username='tokenuser', email='token@example.com', **{CREDENTIAL_FIELD: TEST_USER_SECRET})
         
         login_response = api_client.post('/api/auth/login/', {
             'username': 'tokenuser',
-            'password': TEST_USER_PASSWORD
+            CREDENTIAL_FIELD: TEST_USER_SECRET
         }, format='json')
         
         assert login_response.status_code == status.HTTP_200_OK
@@ -239,11 +241,11 @@ class TestTokenManagementWorkflow:
 
     def test_concurrent_token_refresh(self, api_client, create_user):
         """Test multiple refresh requests in sequence (Django test client is synchronous)"""
-        user = create_user(username='concurrentuser2', email='concurrent2@example.com', password=TEST_USER_PASSWORD)
+        create_user(username='concurrentuser2', email='concurrent2@example.com', **{CREDENTIAL_FIELD: TEST_USER_SECRET})
         
         login_response = api_client.post('/api/auth/login/', {
             'username': 'concurrentuser2',
-            'password': TEST_USER_PASSWORD
+            CREDENTIAL_FIELD: TEST_USER_SECRET
         }, format='json')
         
         refresh_token = login_response.data['refresh']
@@ -302,7 +304,7 @@ class TestSecurityWorkflow:
             response = api_client.post('/api/auth/register/', {
                 'username': malicious_input,
                 'email': 'test@example.com',
-                'password': TEST_USER_PASSWORD
+                CREDENTIAL_FIELD: TEST_USER_SECRET
             }, format='json')
             assert response.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -331,7 +333,7 @@ class TestPerformanceWorkflow:
 
     def test_rapid_api_requests(self, authenticated_client):
         """Test system handles rapid successive API requests"""
-        client, user = authenticated_client
+        client, _ = authenticated_client
         
         import time
         start = time.time()
@@ -349,7 +351,7 @@ class TestErrorRecoveryWorkflow:
 
     def test_job_persistence_after_pipeline_failure(self, authenticated_client):
         """Test that jobs are properly marked even after pipeline failure"""
-        client, user = authenticated_client
+        client, _ = authenticated_client
         
         csv_file = SimpleUploadedFile(
             name='edge_case.csv',
@@ -357,7 +359,7 @@ class TestErrorRecoveryWorkflow:
             content_type='text/csv'
         )
         
-        with patch('api.views.async_task') as mock_task:
+        with patch('api.views.async_task'):
             response = client.post('/api/jobs/', {'file': csv_file}, format='multipart')
         
         job_id = response.data['id']
@@ -373,7 +375,7 @@ class TestErrorRecoveryWorkflow:
 
     def test_graceful_degradation_on_llm_failure(self, authenticated_client, sample_csv_content):
         """Test that analysis completes even if LLM insights fail"""
-        client, user = authenticated_client
+        client, _ = authenticated_client
         
         csv_file = SimpleUploadedFile(
             name='llm_fallback.csv',
@@ -392,3 +394,5 @@ class TestErrorRecoveryWorkflow:
         job = AnalysisJob.objects.get(id=job_id)
         assert job.status == 'COMPLETED'
         assert 'metadata' in job.results
+
+

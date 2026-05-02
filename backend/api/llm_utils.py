@@ -5,8 +5,27 @@ import requests
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+# The GenAI client may be installed under different top-level package names
+# depending on the wheel/distribution. Import defensively so tests and CI
+# don't break if the module is exposed as `google.genai`, `google_genai`, or
+# a direct `genai` package.
+try:
+    from google import genai  # preferred
+    from google.genai import types
+except Exception:
+    try:
+        import google_genai as genai
+        from google_genai import types
+    except Exception:
+        try:
+            import genai
+            from genai import types
+        except Exception:
+            # Provide a lightweight shim so test patching (patch('api.llm_utils.genai.Client'))
+            # continues to work even if the real package is not importable in CI.
+            from types import SimpleNamespace
+            genai = SimpleNamespace(Client=lambda *a, **k: None)
+            types = SimpleNamespace(GenerateContentConfig=lambda **k: None)
 from google.api_core import exceptions as gemini_exceptions
 
 
@@ -71,8 +90,7 @@ def _call_gemini(api_key, prompt, max_retries=2):
                     config=types.GenerateContentConfig(response_mime_type="application/json")
                 )
                 raw_text = response.text.strip()
-                if raw_text.startswith("```"):
-                    raw_text = raw_text.split("```")[1].replace("json", "", 1).split("```")[0].strip()
+                raw_text = _strip_json_fence(raw_text)
                 return json.loads(raw_text)
             except (gemini_exceptions.ResourceExhausted, gemini_exceptions.ServiceUnavailable):
                 time.sleep((i + 1) * 10)
@@ -80,6 +98,16 @@ def _call_gemini(api_key, prompt, max_retries=2):
     except Exception as e:
         logger.error("Gemini API error: %s", e, exc_info=True)
         return None
+
+
+def _strip_json_fence(raw_text):
+    if not raw_text.startswith("```"):
+        return raw_text
+
+    fence_parts = raw_text.split("```", 2)
+    fenced_body = next((part for part in fence_parts[1:] if part.strip()), "")
+    return fenced_body.replace("json", "", 1).strip()
+
 
 def _call_grok(api_key, prompt, max_retries=2):
     """Internal helper for xAI Grok API"""
@@ -97,33 +125,54 @@ def _call_grok(api_key, prompt, max_retries=2):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=30)
             if resp.status_code == 200:
-                return json.loads(resp.json()['choices'][0]['message']['content'])
+                return _parse_grok_response(resp.json())
             elif resp.status_code in [429, 503]:
                 time.sleep((i + 1) * 10)
         except Exception as e:
             logger.error("Grok API error: %s", e, exc_info=True)
     return None
 
+def _parse_grok_response(response_data):
+    choices = response_data.get("choices") or []
+    first_choice = next(iter(choices), {})
+    message = first_choice.get("message") or {}
+    content = message.get("content")
+    
+    if not content:
+        return None
+        
+    # Strip fences from Grok too, just in case!
+    clean_content = _strip_json_fence(content.strip())
+    return json.loads(clean_content)
+
 def _normalize_response(data):
     """Main Orchestrator: Defensive cleaning to match Frontend expectations"""
-    
+
     # 1. Clean Summary (String)
     data["summary"] = str(data.get("summary") or "")
 
     # 2. Clean Hypotheses (List of Strings)
-    data["hypotheses"] = _clean_list_items(data.get("hypotheses", []), max_items=3)
+    # Prefer extracting from structured dict items when available; if the
+    # LLM returned plain strings only, accept them. This avoids mixing raw
+    # stray strings with higher-quality dict-derived hypotheses.
+    raw_hypotheses = data.get("hypotheses", [])
+    data["hypotheses"] = _clean_hypotheses(raw_hypotheses, max_items=3)
 
     # 3. Clean Cleaning Tips (String)
-    tips = data.get("cleaning_tips", "")
-    if isinstance(tips, list):
-        data["cleaning_tips"] = ". ".join([str(t) for t in tips])
-    else:
-        data["cleaning_tips"] = str(tips)
+    data["cleaning_tips"] = _clean_cleaning_tips(data.get("cleaning_tips", ""))
 
     # 4. Clean Feature Suggestions (List of Strings)
-    data["feature_suggestions"] = _clean_list_items(data.get("feature_suggestions", []), max_items=3)
+    data["feature_suggestions"] = _clean_list_items(
+        data.get("feature_suggestions", []), max_items=3
+    )
 
     return data
+
+
+def _clean_cleaning_tips(tips):
+    if isinstance(tips, list):
+        return ". ".join([str(t) for t in tips])
+    return str(tips)
 
 
 def _clean_list_items(raw_list, max_items):
@@ -138,6 +187,34 @@ def _clean_list_items(raw_list, max_items):
             clean_items.append(val)
     
     return clean_items[:max_items]
+
+
+def _clean_hypotheses(raw_list, max_items):
+    """Specialised cleaning for hypotheses: prefer dict-derived values.
+
+    If any structured (dict) hypotheses exist, return only those values in
+    order; otherwise fall back to treating raw strings as hypotheses.
+    """
+    if not isinstance(raw_list, list):
+        return []
+
+    # Extract from dicts first
+    dict_vals = []
+    primitive_vals = []
+    for item in raw_list:
+        if isinstance(item, dict):
+            val = _extract_string_value(item)
+            if val:
+                dict_vals.append(val)
+        else:
+            # Keep primitives as fallback
+            v = _extract_string_value(item)
+            if v:
+                primitive_vals.append(v)
+
+    if dict_vals:
+        return dict_vals[:max_items]
+    return (dict_vals + primitive_vals)[:max_items]
 
 
 def _extract_string_value(item):

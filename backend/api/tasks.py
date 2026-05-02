@@ -44,6 +44,18 @@ def _count_rows(file_path: str) -> int:
         if result.returncode == 0:
             # wc output: "  12345 /path/to/file.csv"
             line_count = int(result.stdout.strip().split()[0])
+            # wc counts newline characters; if the file does not end with a
+            # trailing newline the reported value will be one less than the
+            # actual number of lines. Check the last byte and compensate.
+            try:
+                with open(file_path, 'rb') as f:
+                    if f.seek(0, os.SEEK_END) == 0:
+                        return 0
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        line_count += 1
+            except OSError:
+                pass
             return max(0, line_count - 1)   # subtract 1 for the header row
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, IndexError):
         pass  # wc not available — fall through to pandas
@@ -286,7 +298,7 @@ def run_ml_engine(numeric_df, eda_results):
             cx, cy = top_6[i], top_6[j]
             pdf = ml_ready_df[[cx, cy]].dropna()
             if len(pdf) > 5:
-                s = pdf.sample(n=min(300, len(pdf)))
+                s = pdf.sample(n=min(300, len(pdf)), random_state=42)
                 if s[cx].nunique() > 1:
                     m, b = np.polyfit(s[cx], s[cy], 1)
                     gallery.append({

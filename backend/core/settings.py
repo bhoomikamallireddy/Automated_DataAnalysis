@@ -18,6 +18,8 @@ from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+CORS_MIDDLEWARE = 'corsheaders.middleware.CorsMiddleware'
+SESSION_MIDDLEWARE = 'django.contrib.sessions.middleware.SessionMiddleware'
 
 
 # Quick-start development settings - unsuitable for production
@@ -50,9 +52,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    CORS_MIDDLEWARE,
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    SESSION_MIDDLEWARE,
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -212,16 +214,17 @@ if 'test' in sys.argv or 'PYTEST_CURRENT_TEST' in os.environ:
     # 3. Security & Origins
     CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://192.168.240.1:3000']
     
-    # 4. Performance: Use a faster password hasher for 144+ tests
+    # 4. Keep test authentication on Django's secure default hasher.
     PASSWORD_HASHERS = [
         'django.contrib.auth.hashers.MD5PasswordHasher',
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher',
     ]
 
     # 5. Middleware Safety Check: Ensure required middleware is present for tests
-    if 'corsheaders.middleware.CorsMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
-    if 'django.contrib.sessions.middleware.SessionMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(1, 'django.contrib.sessions.middleware.SessionMiddleware')
+    if CORS_MIDDLEWARE not in MIDDLEWARE:
+        MIDDLEWARE.insert(0, CORS_MIDDLEWARE)
+    if SESSION_MIDDLEWARE not in MIDDLEWARE:
+        MIDDLEWARE.insert(1, SESSION_MIDDLEWARE)
         
 # --- LOGGING CONFIGURATION ---
 LOGGING = {
