@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import HealthGauge from "../ui/HealthGauge";
 import MetricCard from "../ui/MetricCard";
 
@@ -40,3 +41,15 @@ export default function KPIRibbon({ results, jobStatus }) {
     </section>
   );
 }
+
+KPIRibbon.propTypes = {
+  results: PropTypes.shape({
+    outliers: PropTypes.objectOf(PropTypes.number),
+    metadata: PropTypes.shape({
+      health_score: PropTypes.number,
+      total_rows: PropTypes.number,
+      total_cols: PropTypes.number,
+    }),
+  }).isRequired,
+  jobStatus: PropTypes.string.isRequired,
+};

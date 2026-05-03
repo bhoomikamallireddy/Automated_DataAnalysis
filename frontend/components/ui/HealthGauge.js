@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import { getHealthLabel } from "../../utils/analysisHelpers";
 
 export default function HealthGauge({ score }) {
@@ -53,3 +54,7 @@ export default function HealthGauge({ score }) {
     </div>
   );
 }
+
+HealthGauge.propTypes = {
+  score: PropTypes.number.isRequired,
+};

@@ -28,7 +28,7 @@ const isTokenExpired = (token) => {
 };
 
 export const getAuthToken = async () => {
-  if (typeof globalThis.window === "undefined") {
+  if (globalThis.window === undefined) {
     return null;
   }
 

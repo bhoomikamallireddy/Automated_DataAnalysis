@@ -1,6 +1,10 @@
 """
 Test settings for running tests with SQLite in-memory database
 """
+import os
+
+os.environ["DEBUG"] = "False"
+
 from core import settings as base_settings
 
 globals().update(

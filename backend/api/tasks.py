@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 
 
 logger = logging.getLogger(__name__)
+ML_RANDOM_STATE = 42
 # ---------------------------------------------------------------------------
 # HELPER: Fast row counter
 # ---------------------------------------------------------------------------
@@ -272,7 +273,7 @@ def run_ml_engine(numeric_df, eda_results):
 
     # --- PCA ---
     scaled = StandardScaler().fit_transform(imp.fit_transform(ml_ready_df))
-    pca = PCA(n_components=min(2, len(ml_ready_df.columns)))
+    pca = PCA(n_components=min(2, len(ml_ready_df.columns)), random_state=ML_RANDOM_STATE)
     ml_insights['pca_data'] = pca.fit_transform(scaled)[:500]
 
     # --- Feature Influence (PCA loadings) ---
@@ -284,10 +285,11 @@ def run_ml_engine(numeric_df, eda_results):
     top_6 = list(influence.keys())[:6]
 
     # --- Distribution Analysis ---
+    rng = random.Random(ML_RANDOM_STATE)
     for col in top_6:
         raw_vals = numeric_df[col].dropna().tolist()
         ml_insights["distribution_analysis"][col] = {
-            "raw_sample": random.sample(raw_vals, min(500, len(raw_vals))),
+            "raw_sample": rng.sample(raw_vals, min(500, len(raw_vals))),
             "stats": eda_results["univariate"].get(col, {}).get("stats", {}),
         }
 
