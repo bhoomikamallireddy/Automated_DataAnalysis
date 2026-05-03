@@ -92,7 +92,7 @@ test.describe('JWT Payload Validation', () => {
         const payload = JSON.parse(atob(sampleJwt.split('.')[1]));
         return payload.exp * 1000 > Date.now();
       } catch (error) {
-        console.error("Valid-token parsing failed:", error);
+        console.error("Current-jwt parsing failed:", error);
         return false;
       }
     });

@@ -1095,8 +1095,11 @@ class MiddlewareTests(TestCase):
 
     def test_no_cache_headers_for_api(self):
         """Test API responses don't have cache headers"""
-        self.client.force_login(self.user)
-        response = self.client.get('/api/jobs/')
+        refresh = RefreshToken.for_user(self.user)
+        response = self.client.get(
+            '/api/jobs/',
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}',
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_allowed_hosts_configuration(self):

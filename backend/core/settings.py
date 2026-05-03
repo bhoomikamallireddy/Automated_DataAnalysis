@@ -216,8 +216,8 @@ if 'test' in sys.argv or 'PYTEST_CURRENT_TEST' in os.environ:
     
     # 4. Keep test authentication on Django's secure default hasher.
     PASSWORD_HASHERS = [
-        'django.contrib.auth.hashers.MD5PasswordHasher',
         'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+        'django.contrib.auth.hashers.MD5PasswordHasher',
     ]
 
     # 5. Middleware Safety Check: Ensure required middleware is present for tests

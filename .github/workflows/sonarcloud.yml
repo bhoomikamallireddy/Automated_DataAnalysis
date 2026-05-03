@@ -31,7 +31,7 @@ jobs:
       - name: Run backend tests with coverage
         working-directory: backend
         env:
-          SECRET_KEY: test-secret-key
+          SECRET_KEY: test-secret-key-for-ci-only-32-bytes-minimum
           DB_PASSWORD: test-db-password
           CORS_ALLOWED_ORIGINS: http://localhost:3000
           EMAIL_HOST_USER: test@example.com

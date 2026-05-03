@@ -38,11 +38,13 @@ def api_client():
 @pytest.fixture
 def create_user():
     """Factory fixture to create test users"""
-    def _create_user(username='testuser', email='test@example.com', credential=TEST_USER_SECRET):
+    def _create_user(username='testuser', email='test@example.com', credential=TEST_USER_SECRET, **extra_fields):
+        credential = extra_fields.pop(CREDENTIAL_FIELD, credential)
         return User.objects.create_user(
             username=username,
             email=email,
-            **{CREDENTIAL_FIELD: credential}
+            **{CREDENTIAL_FIELD: credential},
+            **extra_fields,
         )
     return _create_user
 
