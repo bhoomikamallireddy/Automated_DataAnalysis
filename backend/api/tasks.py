@@ -2,7 +2,6 @@ import os
 import subprocess 
 import pandas as pd
 import numpy as np
-import random
 import logging
 from .models import AnalysisJob
 from .llm_utils import get_llm_insights
@@ -14,6 +13,16 @@ from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 ML_RANDOM_STATE = 42
+
+
+def _evenly_spaced_sample(frame_or_series, sample_size):
+    if len(frame_or_series) <= sample_size:
+        return frame_or_series
+
+    indices = np.linspace(0, len(frame_or_series) - 1, num=sample_size, dtype=int)
+    return frame_or_series.iloc[indices]
+
+
 # ---------------------------------------------------------------------------
 # HELPER: Fast row counter
 # ---------------------------------------------------------------------------
@@ -285,11 +294,11 @@ def run_ml_engine(numeric_df, eda_results):
     top_6 = list(influence.keys())[:6]
 
     # --- Distribution Analysis ---
-    rng = random.Random(ML_RANDOM_STATE)
     for col in top_6:
-        raw_vals = numeric_df[col].dropna().tolist()
+        raw_vals = numeric_df[col].dropna()
+        sample_size = min(500, len(raw_vals))
         ml_insights["distribution_analysis"][col] = {
-            "raw_sample": rng.sample(raw_vals, min(500, len(raw_vals))),
+            "raw_sample": _evenly_spaced_sample(raw_vals, sample_size).tolist(),
             "stats": eda_results["univariate"].get(col, {}).get("stats", {}),
         }
 
@@ -300,7 +309,7 @@ def run_ml_engine(numeric_df, eda_results):
             cx, cy = top_6[i], top_6[j]
             pdf = ml_ready_df[[cx, cy]].dropna()
             if len(pdf) > 5:
-                s = pdf.sample(n=min(300, len(pdf)), random_state=42)
+                s = _evenly_spaced_sample(pdf, min(300, len(pdf)))
                 if s[cx].nunique() > 1:
                     m, b = np.polyfit(s[cx], s[cy], 1)
                     gallery.append({

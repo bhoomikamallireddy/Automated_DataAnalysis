@@ -37,7 +37,12 @@ jobs:
           EMAIL_HOST_USER: test@example.com
           EMAIL_HOST_PASSWORD: test-email-password
           FRONTEND_URL: http://localhost:3000
-        run: pytest --cov=api --cov=core --cov-config=.coveragerc --cov-report=xml:coverage.xml --cov-report=term-missing
+        run: pytest --cov=. --cov-config=.coveragerc --cov-report=xml:coverage.xml --cov-report=term-missing
+
+      - name: Normalize coverage paths for SonarCloud
+        run: |
+          sed -i 's#filename="api/#filename="backend/api/#g' backend/coverage.xml
+          sed -i 's#filename="core/#filename="backend/core/#g' backend/coverage.xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v3
