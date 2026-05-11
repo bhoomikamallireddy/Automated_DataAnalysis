@@ -1,3 +1,44 @@
+name: SonarCloud Analysis (branch-aware)
+
+on:
+  push:
+    branches:
+      - main
+      - content-generator
+
+jobs:
+  sonarqube:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarCloud Scan (content-generator)
+        if: github.ref_name == 'content-generator'
+        uses: SonarSource/sonarqube-scan-action@v3
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.branch.name=${{ github.ref_name }}
+            -Dsonar.sources=ai_content_generator/
+            -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx,ai_content_generator/frontend/src/app/**/*.ts
+            -Dsonar.exclusions=**/node_modules/**,**/venv/**,**/.next/**,**/dist/**,**/migrations/**,**/__pycache__/**,**/public/**
+            -Dsonar.coverage.exclusions=**/*
+
+      - name: SonarCloud Scan (main)
+        if: github.ref_name == 'main'
+        uses: SonarSource/sonarqube-scan-action@v3
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.branch.name=${{ github.ref_name }}
 name: SonarCloud Analysis
 
 on:
