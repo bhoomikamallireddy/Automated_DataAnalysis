@@ -29,6 +29,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: >
+            -Dsonar.organization=bhoomikamallireddy
             -Dsonar.branch.name=content-generator
             -Dsonar.sources=ai_content_generator/
             -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx,ai_content_generator/frontend/src/app/**/*.ts
