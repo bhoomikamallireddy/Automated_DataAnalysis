@@ -21,7 +21,7 @@ jobs:
       # =========================================================
       # SCAN LOGIC FOR: content-generator branch
       # =========================================================
-      - name: SonarCloud Scan (AI Content Generator)
+      - name: SonarCloud Scan (AI Architect)
         if: github.ref_name == 'content-generator'
         uses: SonarSource/sonarqube-scan-action@v3
         env:
@@ -29,12 +29,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: >
+            -Dsonar.projectKey=bhoomikamallireddy_AI_Architect
+            -Dsonar.projectName="AI Content Generator"
             -Dsonar.organization=bhoomikamallireddy
-            -Dsonar.branch.name=content-generator
             -Dsonar.sources=ai_content_generator/
-            -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx,ai_content_generator/frontend/src/app/**/*.ts
-            -Dsonar.exclusions=**/node_modules/**,**/venv/**,**/.next/**,**/dist/**,**/migrations/**,**/__pycache__/**,**/public/**
-            -Dsonar.coverage.exclusions=**/*
+            -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx
+            -Dsonar.branch.name=main
 
       # =========================================================
       # SCAN LOGIC FOR: main branch (AutoEDA)
