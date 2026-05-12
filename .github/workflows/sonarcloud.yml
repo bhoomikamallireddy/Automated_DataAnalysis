@@ -1,51 +1,10 @@
-name: SonarCloud Analysis (branch-aware)
-
-on:
-  push:
-    branches:
-      - main
-      - content-generator
-
-jobs:
-  sonarqube:
-    name: SonarCloud Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: SonarCloud Scan (content-generator)
-        if: github.ref_name == 'content-generator'
-        uses: SonarSource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: >
-            -Dsonar.branch.name=${{ github.ref_name }}
-            -Dsonar.sources=ai_content_generator/
-            -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx,ai_content_generator/frontend/src/app/**/*.ts
-            -Dsonar.exclusions=**/node_modules/**,**/venv/**,**/.next/**,**/dist/**,**/migrations/**,**/__pycache__/**,**/public/**
-            -Dsonar.coverage.exclusions=**/*
-
-      - name: SonarCloud Scan (main)
-        if: github.ref_name == 'main'
-        uses: SonarSource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: >
-            -Dsonar.branch.name=${{ github.ref_name }}
 name: SonarCloud Analysis
 
 on:
   push:
     branches:
       - main
-
+      - content-generator
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -57,19 +16,42 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Necessary for SonarCloud to see commit history
+          fetch-depth: 0
 
-      - name: Set up Python
+      # =========================================================
+      # SCAN LOGIC FOR: content-generator branch
+      # =========================================================
+      - name: SonarCloud Scan (AI Content Generator)
+        if: github.ref_name == 'content-generator'
+        uses: SonarSource/sonarqube-scan-action@v3
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.branch.name=content-generator
+            -Dsonar.sources=ai_content_generator/
+            -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx,ai_content_generator/frontend/src/app/**/*.ts
+            -Dsonar.exclusions=**/node_modules/**,**/venv/**,**/.next/**,**/dist/**,**/migrations/**,**/__pycache__/**,**/public/**
+            -Dsonar.coverage.exclusions=**/*
+
+      # =========================================================
+      # SCAN LOGIC FOR: main branch (AutoEDA)
+      # =========================================================
+      - name: Set up Python for AutoEDA
+        if: github.ref_name == 'main'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install backend dependencies
+      - name: Install AutoEDA dependencies
+        if: github.ref_name == 'main'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run backend tests with coverage
+      - name: Run AutoEDA tests with coverage
+        if: github.ref_name == 'main'
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key
@@ -78,10 +60,15 @@ jobs:
           EMAIL_HOST_USER: test@example.com
           EMAIL_HOST_PASSWORD: test-email-password
           FRONTEND_URL: http://localhost:3000
-        run: pytest --cov=api --cov=core --cov-config=.coveragerc --cov-report=xml:coverage.xml --cov-report=term-missing
+        run: |
+          pytest --cov=api --cov=core --cov-report=xml:coverage.xml
 
-      - name: SonarCloud Scan
+      - name: SonarCloud Scan (Main - AutoEDA)
+        if: github.ref_name == 'main'
         uses: SonarSource/sonarqube-scan-action@v3
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.branch.name=main
