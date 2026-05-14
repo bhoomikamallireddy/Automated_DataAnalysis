@@ -34,7 +34,7 @@ jobs:
             -Dsonar.organization=bhoomikamallireddy
             -Dsonar.sources=ai_content_generator/
             -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx
-            -Dsonar.branch.name=main
+            -Dsonar.branch.name=master
 
       # =========================================================
       # SCAN LOGIC FOR: main branch (AutoEDA)
