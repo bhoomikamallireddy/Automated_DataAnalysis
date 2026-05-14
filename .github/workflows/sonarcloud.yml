@@ -30,7 +30,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=bhoomikamallireddy_AI_Architect
-            -Dsonar.projectName="AI Content Generator"
+            -Dsonar.projectName=AI_Content_Generator
             -Dsonar.organization=bhoomikamallireddy
             -Dsonar.sources=ai_content_generator/
             -Dsonar.inclusions=ai_content_generator/backend/**/*.py,ai_content_generator/frontend/src/app/**/*.tsx
