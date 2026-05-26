@@ -1,62 +1,27 @@
-import os
-from google import genai 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from dotenv import load_dotenv
-from django.shortcuts import render
-from .models import GeneratedPost
-
-load_dotenv() # Load your API key from a .env file
-
+from .tasks import generate_post_task
 
 @api_view(['POST'])
 def generate_social_post(request):
-    print("!!! Request Received !!!")  
-    print(f"Data: {request.data}")    
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    client_id = request.data.get("client_id")
     idea = request.data.get('idea')
     platform = request.data.get('platform', 'General')
-
+    persona = request.data.get('persona', 'technical') 
     if not idea:
         return Response({"error": "No idea provided"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # The Prompt Engineering step
-    prompt = f"""
-    Act as an expert Social Media Strategist and Copywriter. 
-    Your goal is to transform the following idea into a high-performing {platform} post.
 
-    IDEA: {idea}
+    # Trigger the Celery task (hand off to the worker)
+    # .delay() returns an AsyncResult object immediately
+    task = generate_post_task.delay(idea, platform, client_id, persona)
 
-    PLATFORM RULES:
-    1. Tone: Professional yet engaging and conversational.
-    2. Format: Use the specific formatting style (line breaks, bullet points) typical for {platform}.
-    3. Hook: Start with a strong opening line to grab attention.
-    4. Call to Action: Include a subtle call to action at the end.
-    5. Emojis/Hashtags: Use them naturally (not overused).
-
-    Output only the final post content.
-    """
-    
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite", # Use the latest model
-            contents=prompt
-        )
-        ai_content = response.text
-        # SAVE TO POSTGRESQL
-        saved_post = GeneratedPost.objects.create(
-            idea=idea,
-            platform=platform,
-            content=ai_content
-        )
-        return Response({
-            "id": saved_post.id, # Useful for future "History" features
-            "content": ai_content,
-            "platform": platform
-            }, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # Return the task_id to the frontend
+    return Response({
+        "task_id": task.id,
+        "status": "Processing",
+        "message": "AI is generating your content in the background."
+    }, status=status.HTTP_202_ACCEPTED)
     
 
 
