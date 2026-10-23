@@ -1,0 +1,11 @@
+# Ignore the virtual environment
+venv/
+.env
+
+# Next.js build files
+.next/
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
