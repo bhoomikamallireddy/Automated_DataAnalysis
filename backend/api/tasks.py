@@ -2,7 +2,6 @@ import os
 import subprocess 
 import pandas as pd
 import numpy as np
-import random
 import logging
 from .models import AnalysisJob
 from .llm_utils import get_llm_insights
@@ -13,6 +12,17 @@ from sklearn.preprocessing import StandardScaler
 
 
 logger = logging.getLogger(__name__)
+ML_RANDOM_STATE = 42
+
+
+def _evenly_spaced_sample(frame_or_series, sample_size):
+    if len(frame_or_series) <= sample_size:
+        return frame_or_series
+
+    indices = np.linspace(0, len(frame_or_series) - 1, num=sample_size, dtype=int)
+    return frame_or_series.iloc[indices]
+
+
 # ---------------------------------------------------------------------------
 # HELPER: Fast row counter
 # ---------------------------------------------------------------------------
@@ -44,6 +54,18 @@ def _count_rows(file_path: str) -> int:
         if result.returncode == 0:
             # wc output: "  12345 /path/to/file.csv"
             line_count = int(result.stdout.strip().split()[0])
+            # wc counts newline characters; if the file does not end with a
+            # trailing newline the reported value will be one less than the
+            # actual number of lines. Check the last byte and compensate.
+            try:
+                with open(file_path, 'rb') as f:
+                    if f.seek(0, os.SEEK_END) == 0:
+                        return 0
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        line_count += 1
+            except OSError:
+                pass
             return max(0, line_count - 1)   # subtract 1 for the header row
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, IndexError):
         pass  # wc not available — fall through to pandas
@@ -260,7 +282,7 @@ def run_ml_engine(numeric_df, eda_results):
 
     # --- PCA ---
     scaled = StandardScaler().fit_transform(imp.fit_transform(ml_ready_df))
-    pca = PCA(n_components=min(2, len(ml_ready_df.columns)))
+    pca = PCA(n_components=min(2, len(ml_ready_df.columns)), random_state=ML_RANDOM_STATE)
     ml_insights['pca_data'] = pca.fit_transform(scaled)[:500]
 
     # --- Feature Influence (PCA loadings) ---
@@ -273,9 +295,10 @@ def run_ml_engine(numeric_df, eda_results):
 
     # --- Distribution Analysis ---
     for col in top_6:
-        raw_vals = numeric_df[col].dropna().tolist()
+        raw_vals = numeric_df[col].dropna()
+        sample_size = min(500, len(raw_vals))
         ml_insights["distribution_analysis"][col] = {
-            "raw_sample": random.sample(raw_vals, min(500, len(raw_vals))),
+            "raw_sample": _evenly_spaced_sample(raw_vals, sample_size).tolist(),
             "stats": eda_results["univariate"].get(col, {}).get("stats", {}),
         }
 
@@ -286,7 +309,7 @@ def run_ml_engine(numeric_df, eda_results):
             cx, cy = top_6[i], top_6[j]
             pdf = ml_ready_df[[cx, cy]].dropna()
             if len(pdf) > 5:
-                s = pdf.sample(n=min(300, len(pdf)))
+                s = _evenly_spaced_sample(pdf, min(300, len(pdf)))
                 if s[cx].nunique() > 1:
                     m, b = np.polyfit(s[cx], s[cy], 1)
                     gallery.append({

@@ -30,6 +30,7 @@ export default function ForgotPasswordPage() {
         setError("Something went wrong. Please try again.");
       }
     } catch (err) {
+      console.error("Password reset request failed:", err);
       setError("Connection to server failed.");
     } finally {
       setLoading(false);
@@ -66,10 +67,14 @@ export default function ForgotPasswordPage() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">
+              <label
+                htmlFor="forgot-password-email"
+                className="text-[10px] font-bold text-zinc-400 uppercase ml-1"
+              >
                 Email Address
               </label>
               <input
+                id="forgot-password-email"
                 type="email"
                 required
                 className="w-full mt-1.5 p-4 bg-zinc-50 border border-zinc-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-800 font-medium transition-all"

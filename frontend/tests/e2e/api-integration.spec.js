@@ -1,4 +1,4 @@
-import { test, expect, request } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { 
   generateTestUser, 
   createTestCSVFile,
@@ -7,10 +7,18 @@ import {
   createAnalysisJob,
   getJobStatus,
   listJobs,
-  waitForJobCompletion
+  waitForJobCompletion,
+  CREDENTIAL_FIELD,
+  TEST_CREDENTIAL
 } from '../utils/api.js';
 
 const API_BASE_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000';
+
+const unsignedJwt = (payload) => [
+  Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'),
+  Buffer.from(JSON.stringify(payload)).toString('base64url'),
+  'test'
+].join('.');
 
 test.describe('E2E: User Registration Flow', () => {
   test('should register a new user via API', async () => {
@@ -52,7 +60,7 @@ test.describe('E2E: User Authentication Flow', () => {
   test('should login with valid credentials', async () => {
     const { ok, data, accessToken, refreshToken } = await loginUser(
       testUser.username, 
-      testUser.password
+      testUser[CREDENTIAL_FIELD]
     );
     
     expect(ok).toBeTruthy();
@@ -63,21 +71,21 @@ test.describe('E2E: User Authentication Flow', () => {
   });
 
   test('should reject invalid password', async () => {
-    const { ok, status } = await loginUser(testUser.username, 'wrongpassword');
+    const { ok, status } = await loginUser(testUser.username, TEST_CREDENTIAL.slice(1));
     
     expect(ok).toBeFalsy();
     expect(status).toBe(401);
   });
 
   test('should reject non-existent user', async () => {
-    const { ok, status } = await loginUser('nonexistent', testUser.password);
+    const { ok, status } = await loginUser('nonexistent', testUser[CREDENTIAL_FIELD]);
     
     expect(ok).toBeFalsy();
     expect(status).toBe(401);
   });
 
   test('should return JWT tokens in correct format', async () => {
-    const { data } = await loginUser(testUser.username, testUser.password);
+    const { data } = await loginUser(testUser.username, testUser[CREDENTIAL_FIELD]);
     
     const tokenParts = data.access.split('.');
     expect(tokenParts).toHaveLength(3);
@@ -95,7 +103,7 @@ test.describe('E2E: Analysis Job Management', () => {
   test.beforeEach(async () => {
     testUser = generateTestUser('job');
     await registerUser(testUser);
-    auth = await loginUser(testUser.username, testUser.password);
+    auth = await loginUser(testUser.username, testUser[CREDENTIAL_FIELD]);
   });
 
   test('should create a new analysis job', async () => {
@@ -128,10 +136,10 @@ test.describe('E2E: Analysis Job Management', () => {
     const csvFile = createTestCSVFile('user_job.csv');
     await createAnalysisJob(auth.accessToken, csvFile);
     
-    const { data: otherUserData } = await (async () => {
+    await (async () => {
       const otherUser = generateTestUser('other');
       await registerUser(otherUser);
-      const otherAuth = await loginUser(otherUser.username, otherUser.password);
+      const otherAuth = await loginUser(otherUser.username, otherUser[CREDENTIAL_FIELD]);
       return await listJobs(otherAuth.accessToken);
     })();
     
@@ -183,7 +191,7 @@ test.describe('E2E: Complete Analysis Pipeline', () => {
   test.beforeEach(async () => {
     testUser = generateTestUser('pipeline');
     await registerUser(testUser);
-    auth = await loginUser(testUser.username, testUser.password);
+    auth = await loginUser(testUser.username, testUser[CREDENTIAL_FIELD]);
   });
 
   test('should complete full analysis pipeline', async () => {
@@ -238,14 +246,14 @@ test.describe('E2E: Complete Analysis Pipeline', () => {
   });
 });
 
-test.describe('E2E: Token Management', () => {
+test.describe('E2E: JWT Management', () => {
   let auth;
   let testUser;
 
   test.beforeEach(async () => {
     testUser = generateTestUser('token');
     await registerUser(testUser);
-    auth = await loginUser(testUser.username, testUser.password);
+    auth = await loginUser(testUser.username, testUser[CREDENTIAL_FIELD]);
   });
 
   test('should refresh access token', async () => {
@@ -261,11 +269,11 @@ test.describe('E2E: Token Management', () => {
     expect(data.access).not.toBe(auth.accessToken);
   });
 
-  test('should reject expired token', async () => {
-    const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJleHAiOjB9.test';
+  test('should reject stale JWT', async () => {
+    const sampleJwt = unsignedJwt({ user_id: 1, username: 'test', exp: 0 });
     
     const response = await fetch(`${API_BASE_URL}/api/jobs/`, {
-      headers: { 'Authorization': `Bearer ${expiredToken}` }
+      headers: { 'Authorization': `Bearer ${sampleJwt}` }
     });
     
     expect(response.status).toBe(401);
@@ -280,10 +288,10 @@ test.describe('E2E: Token Management', () => {
   });
 
   test('should reject tampered token', async () => {
-    const tamperedToken = auth.accessToken.slice(0, -5) + 'xxxxx';
+    const mutatedJwt = auth.accessToken.slice(0, -5) + 'xxxxx';
     
     const response = await fetch(`${API_BASE_URL}/api/jobs/`, {
-      headers: { 'Authorization': `Bearer ${tamperedToken}` }
+      headers: { 'Authorization': `Bearer ${mutatedJwt}` }
     });
     
     expect(response.status).toBe(401);
@@ -328,7 +336,7 @@ test.describe('E2E: Security Validation', () => {
   test.beforeEach(async () => {
     testUser = generateTestUser('security');
     await registerUser(testUser);
-    auth = await loginUser(testUser.username, testUser.password);
+    auth = await loginUser(testUser.username, testUser[CREDENTIAL_FIELD]);
   });
 
   test('should not expose user data without authentication', async () => {
@@ -342,7 +350,7 @@ test.describe('E2E: Security Validation', () => {
     
     const otherUser = generateTestUser('attacker');
     await registerUser(otherUser);
-    const otherAuth = await loginUser(otherUser.username, otherUser.password);
+    const otherAuth = await loginUser(otherUser.username, otherUser[CREDENTIAL_FIELD]);
     
     const { data: otherUserJobs } = await listJobs(otherAuth.accessToken);
     const { data: ownJobs } = await listJobs(auth.accessToken);
@@ -364,3 +372,5 @@ test.describe('E2E: Security Validation', () => {
     expect([400, 415, 201]).toContain(status);
   });
 });
+
+

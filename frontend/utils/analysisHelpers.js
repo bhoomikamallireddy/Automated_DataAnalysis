@@ -86,6 +86,28 @@ export function getDistributionPlotConfig(chartType, sampleData) {
   }
 }
 
+export function getCleaningTipsText(cleaningTips) {
+  if (typeof cleaningTips === "string") {
+    return cleaningTips;
+  }
+
+  return "Refer to the data audit for specific cleaning recommendations.";
+}
+
+export function getFeatureSuggestionDetails(suggestion) {
+  if (typeof suggestion === "string") {
+    return {
+      title: suggestion,
+      description: "",
+    };
+  }
+
+  return {
+    title: suggestion.name || suggestion.suggestion || "New Feature",
+    description: suggestion.description || "",
+  };
+}
+
 export const getCleanFileName = (fullName) => {
   if (!fullName) {
     return "provided dataset";

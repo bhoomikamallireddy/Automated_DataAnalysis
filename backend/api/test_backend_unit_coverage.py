@@ -1,6 +1,10 @@
 import json
 import os
+import builtins
+import importlib.util
+import sys
 import tempfile
+import types
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -28,6 +32,85 @@ TEST_EMPTY_SECRET = str()
 
 
 class LLMProviderUnitTests(SimpleTestCase):
+    def _load_llm_utils_with_importer(self, importer):
+        module_path = os.path.join(os.path.dirname(llm_utils.__file__), "llm_utils.py")
+        module_name = f"api.llm_utils_import_fallback_test_{id(importer)}"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+
+        with patch.object(builtins, "__import__", side_effect=importer):
+            try:
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+            finally:
+                sys.modules.pop(module_name, None)
+
+        return module
+
+    def test_llm_utils_import_uses_google_genai_fallback(self):
+        original_import = builtins.__import__
+        fallback_genai = types.SimpleNamespace(Client=lambda *a, **k: "google_genai")
+        fallback_types = types.SimpleNamespace(GenerateContentConfig=lambda **k: "google_genai_config")
+
+        def import_with_google_genai(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "google" and tuple(fromlist or ()) == ("genai",):
+                raise ImportError(name)
+            if name == "google_genai":
+                if tuple(fromlist or ()) == ("types",):
+                    return types.SimpleNamespace(types=fallback_types)
+                return fallback_genai
+            return original_import(name, globals, locals, fromlist, level)
+
+        module = self._load_llm_utils_with_importer(import_with_google_genai)
+
+        self.assertEqual(module.genai.Client(), "google_genai")
+        self.assertEqual(module.types.GenerateContentConfig(), "google_genai_config")
+
+    def test_llm_utils_import_uses_direct_genai_fallback(self):
+        original_import = builtins.__import__
+        fallback_genai = types.SimpleNamespace(Client=lambda *a, **k: "direct_genai")
+        fallback_types = types.SimpleNamespace(GenerateContentConfig=lambda **k: "direct_genai_config")
+
+        def import_with_direct_genai(name, globals=None, locals=None, fromlist=(), level=0):
+            normalized_fromlist = tuple(fromlist or ())
+            if (name, normalized_fromlist) in {
+                ("google", ("genai",)),
+                ("google_genai", ()),
+                ("google_genai", ("types",)),
+            }:
+                raise ImportError(name)
+            if name == "genai":
+                if normalized_fromlist == ("types",):
+                    return types.SimpleNamespace(types=fallback_types)
+                return fallback_genai
+            return original_import(name, globals, locals, fromlist, level)
+
+        module = self._load_llm_utils_with_importer(import_with_direct_genai)
+
+        self.assertEqual(module.genai.Client(), "direct_genai")
+        self.assertEqual(module.types.GenerateContentConfig(), "direct_genai_config")
+
+    def test_llm_utils_import_uses_local_shim_when_genai_packages_missing(self):
+        original_import = builtins.__import__
+
+        def import_without_genai(name, globals=None, locals=None, fromlist=(), level=0):
+            normalized_fromlist = tuple(fromlist or ())
+            if (name, normalized_fromlist) in {
+                ("google", ("genai",)),
+                ("google.genai", ("types",)),
+                ("google_genai", ()),
+                ("google_genai", ("types",)),
+                ("genai", ()),
+                ("genai", ("types",)),
+            }:
+                raise ImportError(name)
+            return original_import(name, globals, locals, fromlist, level)
+
+        module = self._load_llm_utils_with_importer(import_without_genai)
+
+        self.assertIsNone(module.genai.Client())
+        self.assertIsNone(module.types.GenerateContentConfig())
+
     def test_normalize_response_coerces_frontend_shapes(self):
         normalized = llm_utils._normalize_response(
             {
@@ -72,6 +155,14 @@ class LLMProviderUnitTests(SimpleTestCase):
     def test_call_gemini_returns_none_on_client_error(self, _mock_client_class):
         self.assertIsNone(llm_utils._call_gemini(TEST_LLM_API_KEY, "prompt"))
 
+    def test_parse_grok_response_returns_none_without_content(self):
+        self.assertIsNone(llm_utils._parse_grok_response({"choices": [{"message": {}}]}))
+
+    def test_clean_helpers_return_empty_for_non_lists_and_empty_dicts(self):
+        self.assertEqual(llm_utils._clean_list_items("not-a-list", max_items=3), [])
+        self.assertEqual(llm_utils._clean_hypotheses("not-a-list", max_items=3), [])
+        self.assertEqual(llm_utils._extract_string_value({}), "")
+
     @patch("api.llm_utils.requests.post")
     def test_call_grok_parses_successful_response(self, mock_post):
         mock_response = MagicMock(status_code=200)
@@ -115,6 +206,20 @@ class TaskHelperUnitTests(SimpleTestCase):
         mock_completed = MagicMock(returncode=0, stdout="4 /tmp/data.csv")
         with patch("api.tasks.subprocess.run", return_value=mock_completed):
             self.assertEqual(_count_rows("/tmp/data.csv"), 3)
+
+    def test_count_rows_adjusts_wc_result_when_file_lacks_trailing_newline(self):
+        file_path = self._temp_csv("a,b\n1,2\n3,4")
+        mock_completed = MagicMock(returncode=0, stdout=f"2 {file_path}")
+
+        with patch("api.tasks.subprocess.run", return_value=mock_completed):
+            self.assertEqual(_count_rows(file_path), 2)
+
+    def test_count_rows_returns_zero_for_empty_file_after_wc_result(self):
+        file_path = self._temp_csv("")
+        mock_completed = MagicMock(returncode=0, stdout=f"0 {file_path}")
+
+        with patch("api.tasks.subprocess.run", return_value=mock_completed):
+            self.assertEqual(_count_rows(file_path), 0)
 
     def test_count_rows_falls_back_to_pandas_chunks(self):
         file_path = self._temp_csv("a,b\n1,2\n3,4\n")

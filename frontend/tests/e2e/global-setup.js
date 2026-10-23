@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test';
 
-export default async function globalSetup(config) {
+export default async function globalSetup() {
   const backendUrl = process.env.E2E_API_URL || 'http://127.0.0.1:8000';
   const frontendUrl = process.env.E2E_FRONTEND_URL || 'http://localhost:3000';
   const skipHealthCheck = process.env.SKIP_HEALTH_CHECK === 'true';
@@ -26,8 +26,8 @@ export default async function globalSetup(config) {
         timeout: 5000 
       });
       console.log('  Backend: OK');
-    } catch (e) {
-      console.log('  Backend: Not responding (tests may fail if server is not running)');
+    } catch (error) {
+      console.log(`  Backend: Not responding (${error.message})`);
     }
 
     console.log('  Checking frontend health...');
@@ -37,8 +37,8 @@ export default async function globalSetup(config) {
         timeout: 10000 
       });
       console.log('  Frontend: OK');
-    } catch (e) {
-      console.log('  Frontend: Not responding (tests may fail if server is not running)');
+    } catch (error) {
+      console.log(`  Frontend: Not responding (${error.message})`);
     }
 
   } finally {

@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import Link from "next/link";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 export default function PasswordResetConfirmPage() {
@@ -48,6 +47,7 @@ export default function PasswordResetConfirmPage() {
         );
       }
     } catch (err) {
+      console.error("Password reset confirmation failed:", err);
       setError("Connection failed. Check your internet.");
     } finally {
       setLoading(false);
@@ -79,10 +79,14 @@ export default function PasswordResetConfirmPage() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">
+              <label
+                htmlFor="new-password"
+                className="text-[10px] font-bold text-zinc-400 uppercase ml-1"
+              >
                 New Password
               </label>
               <input
+                id="new-password"
                 type="password"
                 required
                 className="w-full mt-1.5 p-4 bg-zinc-50 border border-zinc-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-800 font-medium"
@@ -92,10 +96,14 @@ export default function PasswordResetConfirmPage() {
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase ml-1">
+              <label
+                htmlFor="confirm-new-password"
+                className="text-[10px] font-bold text-zinc-400 uppercase ml-1"
+              >
                 Confirm New Password
               </label>
               <input
+                id="confirm-new-password"
                 type="password"
                 required
                 className="w-full mt-1.5 p-4 bg-zinc-50 border border-zinc-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-800 font-medium"

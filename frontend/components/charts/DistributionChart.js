@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import {
   BarChart,
   Bar,
@@ -59,3 +60,13 @@ export default function DistributionChart({ data, title }) {
     </div>
   );
 }
+
+DistributionChart.propTypes = {
+  data: PropTypes.arrayOf(
+    PropTypes.shape({
+      bin: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+      count: PropTypes.number,
+    }),
+  ).isRequired,
+  title: PropTypes.string.isRequired,
+};

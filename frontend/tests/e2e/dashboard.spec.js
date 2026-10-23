@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const FRONTEND_URL = process.env.E2E_FRONTEND_URL || 'http://localhost:3000';
 const generateUniqueUser = () => ({
-  username: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  username: `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
   email: `user_${Date.now()}@test.com`,
   password: 'SecurePass123!'
 });

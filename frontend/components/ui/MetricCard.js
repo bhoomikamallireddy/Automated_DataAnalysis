@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 
 const MetricCard = React.memo(function MetricCard({
   label,
@@ -20,3 +21,9 @@ const MetricCard = React.memo(function MetricCard({
 });
 
 export default MetricCard;
+
+MetricCard.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+  color: PropTypes.string,
+};

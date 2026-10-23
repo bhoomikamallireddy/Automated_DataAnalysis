@@ -1,7 +1,7 @@
 [run]
+relative_files = True
 source =
-    api
-    core
+    .
 omit =
     */migrations/*
     api/tests.py

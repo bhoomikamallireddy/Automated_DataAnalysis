@@ -55,14 +55,21 @@ jobs:
         if: github.ref_name == 'main'
         working-directory: backend
         env:
-          SECRET_KEY: test-secret-key
+          SECRET_KEY: test-secret-key-for-ci-only-32-bytes-minimum
           DB_PASSWORD: test-db-password
           CORS_ALLOWED_ORIGINS: http://localhost:3000
           EMAIL_HOST_USER: test@example.com
           EMAIL_HOST_PASSWORD: test-email-password
           FRONTEND_URL: http://localhost:3000
+
         run: |
-          pytest --cov=api --cov=core --cov-report=xml:coverage.xml
+          pytest --cov=. --cov-config=.coveragerc --cov-report=xml:coverage.xml --cov-report=term-missing
+
+      - name: Normalize coverage paths for SonarCloud
+        run: |
+          sed -i 's#filename="api/#filename="backend/api/#g' backend/coverage.xml
+          sed -i 's#filename="core/#filename="backend/core/#g' backend/coverage.xml
+
 
       - name: SonarCloud Scan (Main - AutoEDA)
         if: github.ref_name == 'main'

@@ -20,6 +20,7 @@
     "jspdf": "^4.2.1",
     "next": "16.1.6",
     "plotly.js": "^3.4.0",
+    "prop-types": "^15.8.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-plotly.js": "^2.6.0",

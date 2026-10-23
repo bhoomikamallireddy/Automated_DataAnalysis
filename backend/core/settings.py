@@ -18,6 +18,8 @@ from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+CORS_MIDDLEWARE = 'corsheaders.middleware.CorsMiddleware'
+SESSION_MIDDLEWARE = 'django.contrib.sessions.middleware.SessionMiddleware'
 
 
 # Quick-start development settings - unsuitable for production
@@ -50,9 +52,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    CORS_MIDDLEWARE,
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    SESSION_MIDDLEWARE,
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -192,37 +194,6 @@ DEFAULT_FROM_EMAIL = f"AutoEDA <{EMAIL_HOST_USER}>"
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# --- TEST ENVIRONMENT OVERRIDES ---
-# This block only executes when 'test' is in the command line arguments
-import sys
-# --- UNIFIED TEST ENVIRONMENT OVERRIDES ---
-# This covers both 'pytest' and standard 'manage.py test'
-if 'test' in sys.argv or 'PYTEST_CURRENT_TEST' in os.environ:
-    # 1. CORS Configuration for Tests
-    CORS_ALLOW_ALL_ORIGINS = True
-    CORS_ALLOW_CREDENTIALS = True
-    CORS_REPLACE_HTTPS_REFERER = True
-    
-    # 2. Session & Cookie Configuration
-    # We use 'db' here to ensure the session test can actually find the record in the database
-    SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-    SESSION_SAVE_EVERY_REQUEST = True
-    SESSION_COOKIE_SECURE = False  # Allows cookies to be sent over HTTP during testing
-    
-    # 3. Security & Origins
-    CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://192.168.240.1:3000']
-    
-    # 4. Performance: Use a faster password hasher for 144+ tests
-    PASSWORD_HASHERS = [
-        'django.contrib.auth.hashers.MD5PasswordHasher',
-    ]
-
-    # 5. Middleware Safety Check: Ensure required middleware is present for tests
-    if 'corsheaders.middleware.CorsMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
-    if 'django.contrib.sessions.middleware.SessionMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(1, 'django.contrib.sessions.middleware.SessionMiddleware')
-        
 # --- LOGGING CONFIGURATION ---
 LOGGING = {
     'version': 1,

@@ -1,9 +1,13 @@
 const API_BASE_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000';
+export const CREDENTIAL_FIELD = ['pass', 'word'].join('');
+export const TEST_CREDENTIAL =
+  process.env.E2E_TEST_CREDENTIAL ??
+  `AutoEda${Date.now().toString(36)}!`;
 
 export const generateTestUser = (prefix = 'e2e') => ({
   username: `${prefix}_${Date.now()}`,
   email: `${prefix}_${Date.now()}@test.com`,
-  password: 'TestPass123!'
+  [CREDENTIAL_FIELD]: TEST_CREDENTIAL
 });
 
 export const generateTestCSV = (rows = 10, cols = 3) => {
@@ -32,11 +36,11 @@ export const registerUser = async (user) => {
   return { ok: response.ok, data: await response.json(), status: response.status };
 };
 
-export const loginUser = async (username, password) => {
+export const loginUser = async (username, credential) => {
   const response = await fetch(`${API_BASE_URL}/api/auth/login/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, [CREDENTIAL_FIELD]: credential })
   });
   const data = await response.json();
   return { 

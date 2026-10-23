@@ -1,8 +1,12 @@
 import React, { useState, useRef } from "react";
+import PropTypes from "prop-types";
+import { useRouter } from "next/navigation";
 import { getAuthToken } from "../../utils/auth";
 import {
+  ACCESS_TOKEN_KEY,
   JOBS_API_URL,
   LAST_ACTIVE_JOB_ID_KEY,
+  REFRESH_TOKEN_KEY,
   STATUS_COMPLETED,
   STATUS_FAILED,
 } from "../../constants/analysis";
@@ -13,11 +17,19 @@ export default function DashboardHeader({
   onStartNew,
   currentJobId,
   jobStatus,
+  workspaceMode,
+  setWorkspaceMode,
 }) {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const fileInputRef = useRef(null);
+  const router = useRouter();
+
+  const clearAuthSession = () => {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  };
 
   // Logic: Handle File Selection
   const handleFileChange = (event) => {
@@ -59,20 +71,26 @@ export default function DashboardHeader({
       });
 
       if (response.status === 401) {
+        clearAuthSession();
         setUploadMessage("Session expired. Please log in again.");
+        router.push("/login");
         return;
       }
 
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem(LAST_ACTIVE_JOB_ID_KEY, data.id);
-        onJobCreated(data.id); // Update main page state
+        onJobCreated(data.id);
         setFile(null);
+        setUploadMessage("");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       } else {
         setUploadMessage("Upload failed. Please check the Django server.");
       }
     } catch {
-      setUploadMessage("Upload failed because of a network error.");
+      setUploadMessage("Upload failed because of a network or server error.");
     } finally {
       setIsUploading(false);
     }
@@ -96,6 +114,32 @@ export default function DashboardHeader({
               />
             </svg>
           </button>
+
+          <div className="flex lg:hidden bg-zinc-100 p-0.5 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setWorkspaceMode("current")}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${
+                workspaceMode === "current"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-zinc-500"
+              }`}
+            >
+              Lab
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkspaceMode("history")}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${
+                workspaceMode === "history"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-zinc-500"
+              }`}
+            >
+              History
+            </button>
+          </div>
+
           <h2 className="hidden lg:block text-sm font-bold text-zinc-800">
             Project Workspace
           </h2>
@@ -136,6 +180,9 @@ export default function DashboardHeader({
               onStartNew();
               setFile(null);
               setUploadMessage("");
+              if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+              }
             }}
             className="hidden md:block text-[10px] font-bold text-zinc-400 hover:text-blue-600 uppercase tracking-widest"
           >
@@ -152,3 +199,13 @@ export default function DashboardHeader({
     </header>
   );
 }
+
+DashboardHeader.propTypes = {
+  setSidebarOpen: PropTypes.func.isRequired,
+  onJobCreated: PropTypes.func.isRequired,
+  onStartNew: PropTypes.func.isRequired,
+  currentJobId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  jobStatus: PropTypes.string,
+  workspaceMode: PropTypes.string.isRequired,
+  setWorkspaceMode: PropTypes.func.isRequired,
+};

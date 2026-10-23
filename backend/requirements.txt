@@ -1,0 +1,6 @@
+# Minimal backend requirements (kept small for CI clarity)
+# Canonical pip package that provides the Google GenAI client is `google-genai`.
+google-genai==1.54.0
+# Optional alternatives you may see in some environments:
+# google_genai (module name variation) and genai (direct package name)
+# Keep only one to avoid namespace/package conflicts.
